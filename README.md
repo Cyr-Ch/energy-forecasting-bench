@@ -54,13 +54,6 @@ Add-ons (optional): **REFIT**, **UK-DALE**, **SMARD (DE RES)** via converter scr
 * **Seasonality-aware MASE**: seasonal period = 24 (hourly), = 96 (15-min).
 ---
 
-## 🧩 Core APIs
-
-### Dataset Registry (`datasets/registry.py`)
-### Base Dataset (`datasets/base.py`)
-### Scaling Utils (`utils/scaling.py`)
----
-
 ## 🧠 Models
 
 The repository supports multiple forecasting models, from classical baselines to state-of-the-art deep learning architectures.
@@ -233,12 +226,6 @@ To add new tests:
 3. **Run tests**: Execute all tests using `pytest tests/` from the project root.
 
 ---
-
----
-
-
----
-
 
 ## 🧭 Contribution Guide (short)
 
