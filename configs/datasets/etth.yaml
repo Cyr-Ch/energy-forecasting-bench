@@ -1,0 +1,6 @@
+# ETTh dataset configuration
+dataset_name: etth
+data_path: data/raw/etth
+seq_len: 96
+pred_len: 336
+

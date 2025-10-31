@@ -1,0 +1,6 @@
+# ETTm dataset configuration
+dataset_name: ettm
+data_path: data/raw/ettm
+seq_len: 96
+pred_len: 336
+

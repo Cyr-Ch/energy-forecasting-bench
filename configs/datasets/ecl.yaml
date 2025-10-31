@@ -1,0 +1,9 @@
+dataset: ecl
+freq: H
+context_len: 336
+horizons: [24, 48, 96]
+scaler: standard  # fit on train only
+missing: forward_fill
+features:
+  target: load
+  covariates: [temperature, humidity]  # optional if available

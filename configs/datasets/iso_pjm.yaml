@@ -1,0 +1,6 @@
+# ISO PJM dataset configuration
+dataset_name: iso_pjm
+data_path: data/raw/iso_pjm
+seq_len: 96
+pred_len: 336
+

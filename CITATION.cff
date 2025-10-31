@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+title: energy-forecasting-bench
+authors:
+  - family-names: Chaabani
+    given-names: Cyrine
+version: 0.1.0
+dOI: 10.5281/zenodo.XXXXXXX
+message: If you use this repository, please cite it.
+

@@ -1,0 +1,8 @@
+# Informer model configuration
+model_name: informer
+d_model: 512
+n_heads: 8
+e_layers: 2
+d_layers: 1
+factor: 5
+

@@ -1,0 +1,9 @@
+# Default configuration file
+defaults:
+  model: patchtst
+  dataset: etth
+
+# Common settings
+seed: 42
+device: cuda
+

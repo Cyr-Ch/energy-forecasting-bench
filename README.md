@@ -1,4 +1,250 @@
-# VAE_Fluxjl
+# energy-forecasting-bench
 
-The goal of this project is to implement a basic variational autoencoder using the machine learning library Flux  written in julia.
+A clean, reproducible benchmark repo for **energy consumption & generation forecasting** (load, PV, wind), inspired by PatchTST but focused on energy datasets, baselines, and proper evaluation.
+
+---
+
+## 🔧 Quick Start
+
+1. **Create environment**: Create a conda environment named `energybench` with Python 3.11 and activate it.
+
+2. **Install dependencies**: Install all required packages from `requirements.txt`.
+
+3. **Download dataset**: Download a small subset of the ECL dataset using the download tool.
+
+4. **Train model**: Train a PatchTST baseline model on the ECL dataset with default hyperparameters.
+
+5. **Evaluate and report**: Evaluate the trained model and generate a leaderboard CSV file.
+
+---
+
+## ✅ Scope & Principles
+
+* **Energy-focused datasets** with curated loaders + preprocessing.
+* **Reproducible splits** (time-based: train/val/test with rolling-origin).
+* **Leakage-safe** scaling (fit on train, apply on val/test).
+* **Standard metrics**: MAE, RMSE, MAPE, sMAPE, **MASE** (with seasonal naive), CRPS (probabilistic models).
+* **Strong baselines**: ARIMA/Prophet/XGBoost vs. SOTA deep (PatchTST, Autoformer, Informer).
+* **Config-first** (Hydra/OmegaConf) & experiment tracking (TensorBoard or MLflow optional).
+* **CI sanity checks** on tiny subsets for each dataset.
+
+---
+
+## 📊 Datasets (built-in loaders)
+
+* **ECL (Electricity Consumption Load)** — hourly multi-series; common in Informer/PatchTST.
+* **ElectricityLoadDiagrams20112014** — 15-min Portuguese clients (UCI).
+* **ETT (ETTh1, ETTh2, ETTm1, ETTm2)** — transformer station load/temps.
+* **GEFCom2014-Solar/Wind** — competition data for generation.
+* **ISO (PJM hourly)** — regional load; easy baseline.
+
+Add-ons (optional): **REFIT**, **UK-DALE**, **SMARD (DE RES)** via converter scripts.
+
+---
+
+## 🧮 Evaluation Protocols
+
+* **Fixed split** (default):
+
+  * Train: first 70% of timeline
+  * Val: next 10%
+  * Test: last 20%
+* **Rolling-origin** (recommended for papers): multiple forecast origins across test span.
+* **Multi-horizon**: report H ∈ {24, 48, 96, 168} with context L ∈ {96, 168, 336, 720}.
+* **Seasonality-aware MASE**: seasonal period = 24 (hourly), = 96 (15-min).
+---
+
+## 🧩 Core APIs
+
+### Dataset Registry (`datasets/registry.py`)
+### Base Dataset (`datasets/base.py`)
+### Scaling Utils (`utils/scaling.py`)
+---
+
+## 🧠 Models
+
+The repository supports multiple forecasting models, from classical baselines to state-of-the-art deep learning architectures.
+
+### Using Models
+
+#### Deep Learning Models
+
+**PatchTST** — Patch-based Transformer for time series forecasting. Use `get_model('patchtst', ...)` to initialize with parameters like `d_in`, `out_len`, `d_model`, `n_heads`, and `n_layers`. You can also load configuration from YAML files in `configs/models/`.
+
+**Autoformer** — Decomposition Transformer with Auto-Correlation. Initialize using `get_model('autoformer', ...)` with parameters including `d_in`, `out_len`, `d_model`, `n_heads`, and `e_layers`.
+
+**Informer** — Efficient Transformer for long sequence forecasting. Use `get_model('informer', ...)` to create an instance with similar parameters as Autoformer.
+
+#### Classical Baselines
+
+**XGBoost** — Gradient boosting for time series. Import `XGBoostModel` from `models.classical.xgboost`, configure with parameters like `n_estimators` and `max_depth`, then use `fit()` and `predict()` methods.
+
+**Prophet** — Facebook's time series forecasting tool. Import `ProphetModel` from `models.classical.prophet`, initialize and configure, then fit on data and predict for a specified number of steps.
+
+**ARIMA** — AutoRegressive Integrated Moving Average. Import `ARIMAModel` from `models.classical.arima`, configure with order parameters like `(1, 1, 1)`, fit on data, and generate predictions.
+
+### Model Configuration
+
+All models can be configured via YAML files in `configs/models/`. Use the `--config` flag to load a custom configuration file, or override specific parameters directly via command-line arguments.
+
+### Adding a New Model
+
+1. Create a model file in `models/your_model/` directory. Import `register_model` from `models.registry` and `torch.nn`. Decorate your model class with `@register_model('your_model')`. Implement `__init__` to set up the architecture and `forward` for the forward pass.
+
+2. Add a configuration file in `configs/models/your_model.yaml` with your model's hyperparameters.
+
+3. Test the model by running the training script with `--model your_model --dataset ecl`.
+
+---
+
+## 🏃 Training & Evaluation
+
+### Training a Model
+
+**Basic training**: Run `train.py` with required arguments including `--model`, `--dataset`, `--target`, `--context_len`, `--horizon`, and `--seed`. Additional options include `--epochs`, `--batch_size`, and `--lr` for learning rate.
+
+**With custom config**: Use the `--config` flag to load settings from a YAML configuration file, while still specifying the model and dataset via command-line arguments.
+
+**Training options**:
+- `--model`: Model name (patchtst, autoformer, informer, xgboost, etc.)
+- `--dataset`: Dataset name (ecl, electricity, etth, etc.)
+- `--target`: Target column name (default: 'load')
+- `--context_len`: Input sequence length (default: 336)
+- `--horizon`: Forecast horizon (default: 96)
+- `--epochs`: Number of training epochs
+- `--batch_size`: Batch size
+- `--lr`: Learning rate
+- `--seed`: Random seed for reproducibility
+- `--device`: Device (cuda/cpu)
+- `--output_dir`: Output directory for checkpoints
+
+### Evaluation
+
+**Evaluate a trained model**: Run `eval.py` with `--exp_dir` pointing to the experiment directory containing model checkpoints and configurations. Optionally specify `--checkpoint` to use a specific checkpoint file (defaults to `best_model.pt`).
+
+**Evaluation options**:
+- `--exp_dir`: Experiment directory containing model and config
+- `--checkpoint`: Specific checkpoint file (default: 'best_model.pt')
+- `--split`: Split to evaluate (train/val/test)
+- `--metrics`: Comma-separated metrics (MAE,RMSE,sMAPE,MASE)
+
+**Metrics computed**:
+- **MAE**: Mean Absolute Error
+- **RMSE**: Root Mean Squared Error
+- **sMAPE**: Symmetric Mean Absolute Percentage Error
+- **MASE**: Mean Absolute Scaled Error (requires seasonal period)
+
+### Batch Training
+
+Use the provided shell scripts in the `scripts/` directory for batch training. Run `scripts/run_all_ecl.sh` to train all models on the ECL dataset, or `scripts/run_all_etth.sh` for the ETTh dataset.
+
+### Leaderboard Generation
+
+Generate a leaderboard comparing all models by running `tools/make_leaderboard.py` with `--results_dir` pointing to the directory containing experiment results, `--save` specifying the output filename, and `--format` for the output format.
+
+The leaderboard includes:
+- Model name
+- Dataset
+- Context length and horizon
+- All computed metrics
+- Training time and parameters
+
+---
+
+## 📥 Data Download Helpers
+
+### Downloading Datasets
+
+**Basic download**: Run `tools/download_data.py` with `--dataset` specifying the dataset name to download.
+
+**Download with subset**: Add the `--subset` flag to download a specific subset size (e.g., `small` or `full`). The `small` subset is useful for quick testing, while `full` downloads the complete dataset.
+
+**Available datasets**:
+- `ecl`: Electricity Consumption Load (hourly)
+- `electricity`: Electricity Load Diagrams (15-min)
+- `etth`: ETTh1/ETTh2 (hourly transformer data)
+- `ettm`: ETTm1/ETTm2 (15-min transformer data)
+- `gefcom2014_solar`: GEFCom 2014 Solar competition
+- `iso_pjm`: ISO PJM hourly load data
+
+**Download options**:
+- `--dataset`: Dataset name (required)
+- `--subset`: Subset size (small/full, default: 'full')
+- `--output`: Output directory (default: 'data/raw')
+- `--force`: Force re-download even if exists
+
+### Data Preprocessing
+
+After downloading, preprocess the data using `tools/preprocess.py`. Specify the dataset with `--dataset`, provide `--input_dir` for the raw data location, and `--output_dir` for where processed data should be saved.
+
+**Preprocessing options**:
+- `--dataset`: Dataset name
+- `--input_dir`: Raw data directory
+- `--output_dir`: Processed data directory
+- `--scaler`: Scaling method (standard/minmax, default: 'standard')
+- `--missing`: Missing value handling (forward_fill/drop/interpolate)
+
+### Custom Dataset
+
+To add support for a new dataset:
+
+1. Create a dataset loader file in `datasets/your_dataset.py`. Import `EnergyDataset` from `datasets.base`, `register_dataset` from `datasets.registry`, and `pandas`. Decorate your loader function with `@register_dataset('your_dataset')`. The function should load the data, convert date columns to datetime, set them as index, and return an `EnergyDataset` instance with the appropriate frequency.
+
+2. Add a configuration file in `configs/datasets/your_dataset.yaml` with dataset-specific settings.
+
+3. Test the dataset loader by running the download tool with your dataset name.
+
+---
+
+## 🧪 CI (smoke tests)
+
+### Running Tests Locally
+
+**Test imports**: Test that registry modules can be imported correctly by importing `datasets.registry` and `models.registry` using `importlib`.
+
+**Run preprocessing test**: Test the preprocessing pipeline by running `tools/preprocess.py` with a tiny dataset subset.
+
+**Test model initialization**: Verify that models can be initialized correctly by importing from the model registry and creating an instance. Similarly test dataset loading (which may fail if data hasn't been downloaded, which is expected).
+
+### GitHub Actions CI
+
+The repository includes GitHub Actions CI that runs on every push/PR:
+
+**CI workflow** (`.github/workflows/ci.yaml`):
+1. Checks out code
+2. Sets up Python 3.11
+3. Installs dependencies from `requirements.txt`
+4. Runs preprocessing on tiny dataset subset
+5. Tests registry imports
+
+**Viewing CI results**:
+- Go to the "Actions" tab on GitHub
+- Click on the latest workflow run
+- Check individual job status and logs
+
+### Adding Tests
+
+To add new tests:
+
+1. **Unit tests**: Create a `tests/` directory and add test files like `test_models.py`. Import necessary modules (`torch`, `get_model` from registry), create test functions that initialize models, pass sample inputs, and assert expected output shapes.
+
+2. **Integration tests**: Create integration test files like `test_pipeline.py` that test the full pipeline including dataset loading, data splitting, model initialization, and forward passes.
+
+3. **Run tests**: Execute all tests using `pytest tests/` from the project root.
+
+---
+
+---
+
+
+---
+
+
+## 🧭 Contribution Guide (short)
+
+* One PR per model/dataset.
+* Include `configs/` + `scripts/` for batch runs.
+* Add tiny fixture (≤200 KB) for CI.
+
+---
 
