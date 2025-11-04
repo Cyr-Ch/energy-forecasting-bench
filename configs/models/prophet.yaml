@@ -1,0 +1,40 @@
+# Prophet model configuration
+# Facebook Prophet for time series forecasting
+
+model_name: prophet
+
+# Growth parameters - Control trend flexibility
+growth: linear  # 'linear' or 'logistic'
+changepoint_prior_scale: 0.05  # Higher = more flexible trend (can overfit), Lower = less flexible (can underfit)
+n_changepoints: 25  # Number of potential changepoints
+# changepoints: null  # Optional: manual list of changepoint dates
+
+# Seasonality parameters - Control seasonal patterns
+seasonality_mode: additive  # 'additive' or 'multiplicative' (use multiplicative when seasonality scales with trend)
+seasonality_prior_scale: 10.0  # Higher = stronger seasonality effect, Lower = weaker seasonality effect
+
+# Enable/disable specific seasonalities
+yearly_seasonality: auto  # 'auto', true, or false
+weekly_seasonality: auto  # 'auto', true, or false
+daily_seasonality: auto  # 'auto', true, or false
+
+# Holiday parameters
+holidays_prior_scale: 10.0  # Controls strength of holiday effects
+# holidays: null  # Optional: DataFrame with 'holiday' and 'ds' columns
+add_country_holidays: null  # Optional: 'US', 'UK', etc. to add country holidays
+
+# Uncertainty parameters
+interval_width: 0.80  # Width of prediction intervals (0.80 = 80% confidence)
+uncertainty_samples: 1000  # Number of samples for uncertainty estimation
+mcmc_samples: 0  # If > 0, uses MCMC for uncertainty (slower but more accurate)
+
+# Additional regressors (optional)
+# regressors: []  # List of additional regressor column names
+
+# Data format (optional - will auto-detect if not provided)
+# target_column: null  # Name of target column (default: first numeric column)
+# date_column: null  # Name of date column (default: uses index if DatetimeIndex)
+
+# Prediction length (used when steps not provided to predict())
+pred_len: 96  # Default prediction length
+

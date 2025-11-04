@@ -254,3 +254,208 @@ This implementation includes:
 
 The implementation follows the paper's architecture while adapting to the project's model interface conventions.
 
+## Usage Examples
+
+### Basic Usage with ETT Dataset
+
+```python
+import torch
+from torch.utils.data import DataLoader
+from datasets.ettd import Dataset_ETT_hour
+from models.autoformer import Model
+
+# Load ETT dataset
+train_data = Dataset_ETT_hour(
+    root_path='data/raw/etth',
+    flag='train',
+    size=[96, 48, 96],  # [seq_len, label_len, pred_len]
+    features='S',  # Univariate
+    data_path='ETTh1.csv',
+    target='OT',
+    scale=True,
+    timeenc=0,
+    freq='h'
+)
+
+val_data = Dataset_ETT_hour(
+    root_path='data/raw/etth',
+    flag='val',
+    size=[96, 48, 96],
+    features='S',
+    data_path='ETTh1.csv',
+    target='OT',
+    scale=True,
+    timeenc=0,
+    freq='h'
+)
+
+# Create DataLoaders
+train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
+val_loader = DataLoader(val_data, batch_size=32, shuffle=False)
+
+# Initialize Autoformer model
+model = Model(
+    d_in=1,           # Single variable (univariate)
+    out_len=96,       # Forecast horizon
+    d_model=512,      # Model dimension
+    n_heads=8,        # Number of attention heads
+    e_layers=2,       # Encoder layers
+    d_layers=1,       # Decoder layers
+    d_ff=2048,        # Feed-forward dimension
+    factor=3,         # Top-k factor for auto-correlation
+    moving_avg=25,    # Moving average window for decomposition
+    dropout=0.1,      # Dropout rate
+    activation='gelu', # Activation function
+    embed='fixed',    # Embedding type
+    freq='h',         # Frequency ('h' for hourly)
+    label_len=48,     # Decoder label length
+    output_attention=False
+)
+
+# Move model to device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = model.to(device)
+
+# Training loop
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+criterion = torch.nn.MSELoss()
+
+model.train()
+for epoch in range(10):
+    total_loss = 0
+    for batch_x, batch_y, batch_x_mark, batch_y_mark in train_loader:
+        # Move to device
+        batch_x = batch_x.float().to(device)
+        batch_y = batch_y.float().to(device)
+        batch_x_mark = batch_x_mark.float().to(device)
+        batch_y_mark = batch_y_mark.float().to(device)
+        
+        # Forward pass
+        # Autoformer expects [B, L, C] format
+        batch_x = batch_x.unsqueeze(-1)  # [B, L, 1] if univariate
+        pred = model(batch_x, batch_x_mark)
+        
+        # Extract target (last pred_len steps)
+        target = batch_y[:, -96:, 0]  # [B, pred_len]
+        
+        # Compute loss
+        loss = criterion(pred, target)
+        
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        total_loss += loss.item()
+    
+    print(f"Epoch {epoch+1}, Loss: {total_loss/len(train_loader):.4f}")
+
+# Evaluation
+model.eval()
+with torch.no_grad():
+    total_loss = 0
+    for batch_x, batch_y, batch_x_mark, batch_y_mark in val_loader:
+        batch_x = batch_x.float().to(device)
+        batch_y = batch_y.float().to(device)
+        batch_x_mark = batch_x_mark.float().to(device)
+        batch_y_mark = batch_y_mark.float().to(device)
+        
+        batch_x = batch_x.unsqueeze(-1)
+        pred = model(batch_x, batch_x_mark)
+        target = batch_y[:, -96:, 0]
+        
+        loss = criterion(pred, target)
+        total_loss += loss.item()
+    
+    print(f"Validation Loss: {total_loss/len(val_loader):.4f}")
+```
+
+### Using Model Registry
+
+```python
+from models.registry import get_model
+
+# Get Autoformer model via registry
+model = get_model(
+    'autoformer',
+    d_in=1,
+    out_len=96,
+    d_model=512,
+    n_heads=8,
+    e_layers=2,
+    d_layers=1,
+    factor=3,
+    moving_avg=25,
+    dropout=0.1
+)
+```
+
+### Multivariate Forecasting
+
+```python
+# For multivariate forecasting (features='M' or 'MS')
+train_data = Dataset_ETT_hour(
+    root_path='data/raw/etth',
+    flag='train',
+    size=[96, 48, 96],
+    features='M',  # Multivariate - all features
+    data_path='ETTh1.csv',
+    target='OT',
+    scale=True,
+    timeenc=0,
+    freq='h'
+)
+
+# Initialize model with appropriate d_in
+model = Model(
+    d_in=7,  # Number of features in ETTh dataset
+    out_len=96,
+    d_model=512,
+    n_heads=8,
+    e_layers=2,
+    d_layers=1
+)
+```
+
+### Using Time Features
+
+```python
+# With time features enabled
+train_data = Dataset_ETT_hour(
+    root_path='data/raw/etth',
+    flag='train',
+    size=[96, 48, 96],
+    features='S',
+    data_path='ETTh1.csv',
+    target='OT',
+    scale=True,
+    timeenc=1,  # Use time_features function
+    freq='h'
+)
+
+# Time features will be automatically extracted and used in embedding
+```
+
+### Prediction Example
+
+```python
+# Single prediction
+model.eval()
+with torch.no_grad():
+    # Get a sample
+    seq_x, seq_y, seq_x_mark, seq_y_mark = train_data[0]
+    
+    # Prepare input
+    x = seq_x.unsqueeze(0).unsqueeze(-1).float().to(device)  # [1, seq_len, 1]
+    x_mark = seq_x_mark.unsqueeze(0).float().to(device)     # [1, seq_len, time_features]
+    
+    # Make prediction
+    prediction = model(x, x_mark)  # [1, pred_len]
+    
+    # Inverse transform if data was scaled
+    prediction_original = train_data.inverse_transform(prediction.cpu().numpy())
+    
+    print(f"Prediction shape: {prediction.shape}")
+    print(f"Prediction (original scale): {prediction_original}")
+```
+
