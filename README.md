@@ -419,38 +419,150 @@ from models.classical.arima import ARIMAModel
 
 ### Training a Model
 
-**Basic training**: Run `train.py` with required arguments including `--model`, `--dataset`, `--target`, `--context_len`, `--horizon`, and `--seed`. Additional options include `--epochs`, `--batch_size`, and `--lr` for learning rate.
+The training script (`train.py`) supports both **neural models** (PatchTST, Autoformer, Informer) and **classical models** (XGBoost, Prophet, ARIMA) with automatic routing to the appropriate training method.
 
-**With custom config**: Use the `--config` flag to load settings from a YAML configuration file, while still specifying the model and dataset via command-line arguments.
+#### Neural Models (PatchTST, Autoformer, Informer)
 
-**Training options**:
-- `--model`: Model name (patchtst, autoformer, informer, xgboost, etc.)
-- `--dataset`: Dataset name (etth, ettm, etth1, etth2, ettm1, ettm2)
-- `--target`: Target column name (default: 'load')
-- `--context_len`: Input sequence length (default: 336)
-- `--horizon`: Forecast horizon (default: 96)
-- `--epochs`: Number of training epochs
-- `--batch_size`: Batch size
-- `--lr`: Learning rate
-- `--seed`: Random seed for reproducibility
-- `--device`: Device (cuda/cpu)
-- `--output_dir`: Output directory for checkpoints
+**Basic training**: Train a neural model with PyTorch training loop:
+```bash
+python train.py --model patchtst --dataset etth --epochs 10 --batch_size 32
+```
+
+**With config file**: Load settings from a YAML configuration file:
+```bash
+python train.py --config configs/models/patchtst.yaml --dataset etth
+```
+
+**Resume training**: Resume from a checkpoint:
+```bash
+python train.py --resume runs/experiment_name/last_model.pt
+```
+
+**Neural model training options**:
+- `--model`: Model name (`patchtst`, `autoformer`, `informer`)
+- `--dataset`: Dataset name (`etth`, `ettm`, `etth1`, `etth2`, `ettm1`, `ettm2`)
+- `--target`: Target column name (default: `'OT'`)
+- `--context_len`: Input sequence length (default: `336`)
+- `--horizon`: Forecast horizon (default: `96`)
+- `--epochs`: Number of training epochs (default: `10`)
+- `--batch_size`: Batch size (default: `32`)
+- `--lr`: Learning rate (default: `1e-3`)
+- `--weight_decay`: Weight decay (default: `1e-4`)
+- `--dropout`: Dropout rate (default: `0.1`)
+- `--patience`: Early stopping patience (default: `10`)
+- `--save_best_after`: Only save best model after N epochs (default: `0` = immediately)
+- `--scheduler`: Learning rate scheduler (`cosine`, `step`, `plateau`, `none`)
+- `--seed`: Random seed for reproducibility (default: `42`)
+- `--device`: Device (`cuda`/`cpu`, auto-detects if not specified)
+- `--output_dir`: Output directory for experiments (default: `'runs'`)
+- `--exp_name`: Experiment name (auto-generated if not specified)
+- `--config`: Path to YAML config file
+- `--resume`: Resume from checkpoint path
+
+**Neural model features**:
+- Automatic model initialization with appropriate parameters
+- Training loop with gradient descent and backpropagation
+- Validation after each epoch with metrics (MAE, RMSE)
+- Early stopping based on validation loss
+- Best model checkpointing (saves `best_model.pt` when validation improves)
+- Last model checkpointing (saves `last_model.pt` after each epoch)
+- Learning rate scheduling (cosine, step, plateau)
+- Config and results saved to experiment directory
+
+#### Classical Models (XGBoost, Prophet, ARIMA)
+
+**Basic training**: Train a classical model with single fit pass:
+```bash
+python train.py --model xgboost --dataset etth
+python train.py --model prophet --dataset etth --horizon 96
+python train.py --model arima --dataset etth --horizon 96
+```
+
+**With config file**: Load model-specific parameters from YAML:
+```bash
+python train.py --config configs/models/xgboost.yaml --dataset etth
+```
+
+**Classical model training options**:
+- `--model`: Model name (`xgboost`, `prophet`, `arima`)
+- `--dataset`: Dataset name (`etth`, `ettm`, `etth1`, `etth2`, `ettm1`, `ettm2`)
+- `--target`: Target column name (default: `'OT'`)
+- `--context_len`: Input sequence length for feature extraction (default: `336`)
+- `--horizon`: Forecast horizon (default: `96`)
+- `--seed`: Random seed for reproducibility (default: `42`)
+- `--output_dir`: Output directory for experiments (default: `'runs'`)
+- `--exp_name`: Experiment name (auto-generated if not specified)
+- `--config`: Path to YAML config file with model-specific parameters
+
+**Classical model features**:
+- Automatic data preparation for each model type:
+  - **XGBoost**: Extracts sequences, creates lag/rolling features, supports time features
+  - **Prophet**: Converts to DataFrame with datetime index, handles seasonality
+  - **ARIMA**: Extracts univariate series, supports auto-order selection
+- Single training pass (no epochs needed)
+- Automatic inverse transform for scaled data
+- Saves trained model as pickle file (`trained_model.pkl`)
+- Computes validation metrics (MSE, MAE, RMSE)
+- Results saved to JSON file (`results.json`)
+
+**Model-specific config parameters** (via `--config` or YAML file):
+
+**XGBoost**:
+- `n_estimators`, `max_depth`, `learning_rate`
+- `use_lag_features`, `lag_window`, `use_rolling_features`, `rolling_windows`
+- `use_time_features`
+
+**Prophet**:
+- `changepoint_prior_scale`, `seasonality_prior_scale`, `seasonality_mode`
+- `yearly_seasonality`, `weekly_seasonality`, `daily_seasonality`
+
+**ARIMA**:
+- `auto_select`, `max_p`, `max_d`, `max_q`, `seasonal_period`, `trend`
 
 ### Evaluation
 
-**Evaluate a trained model**: Run `eval.py` with `--exp_dir` pointing to the experiment directory containing model checkpoints and configurations. Optionally specify `--checkpoint` to use a specific checkpoint file (defaults to `best_model.pt`).
+The evaluation script (`eval.py`) supports both neural and classical models with comprehensive metrics.
+
+**Evaluate a trained model**: Run `eval.py` with the experiment directory:
+```bash
+python eval.py --exp_dir runs/experiment_name --split test
+```
+
+**Specify checkpoint**: Use a specific checkpoint file:
+```bash
+python eval.py --exp_dir runs/experiment_name --checkpoint best_model.pt --split test
+```
+
+**Custom metrics**: Specify which metrics to compute:
+```bash
+python eval.py --exp_dir runs/experiment_name --metrics MAE,RMSE,MAPE,sMAPE,MASE --split test
+```
 
 **Evaluation options**:
-- `--exp_dir`: Experiment directory containing model and config
-- `--checkpoint`: Specific checkpoint file (default: 'best_model.pt')
-- `--split`: Split to evaluate (train/val/test)
-- `--metrics`: Comma-separated metrics (MAE,RMSE,sMAPE,MASE)
+- `--exp_dir`: Experiment directory containing model and config (required)
+- `--checkpoint`: Specific checkpoint file (default: `'best_model.pt'` for neural, `'trained_model.pkl'` for classical)
+- `--split`: Split to evaluate (`train`, `val`, `test`, default: `'test'`)
+- `--batch_size`: Batch size for neural models (default: `32`)
+- `--device`: Device (`cuda`/`cpu`, auto-detects if not specified)
+- `--metrics`: Comma-separated metrics (default: `'MAE,RMSE,MAPE,sMAPE'`)
+- `--seasonal_period`: Seasonal period for MASE (default: `24` for hourly, `96` for 15-min)
+- `--output`: Output file for results (default: saves to experiment directory)
 
 **Metrics computed**:
 - **MAE**: Mean Absolute Error
 - **RMSE**: Root Mean Squared Error
+- **MAPE**: Mean Absolute Percentage Error
 - **sMAPE**: Symmetric Mean Absolute Percentage Error
-- **MASE**: Mean Absolute Scaled Error (requires seasonal period)
+- **MASE**: Mean Absolute Scaled Error (requires training data and seasonal period)
+- **CRPS**: Continuous Ranked Probability Score (for probabilistic models with prediction intervals)
+
+**Evaluation features**:
+- Automatic model type detection (neural vs classical)
+- Automatic dataset loading based on config
+- Automatic inverse transform for scaled predictions
+- Supports both point forecasts and probabilistic forecasts (for CRPS)
+- Results saved to JSON file
+- Prints metrics to console
 
 ### Batch Training
 
