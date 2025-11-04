@@ -12,7 +12,7 @@ A clean, reproducible benchmark repo for **time series forecasting** on the **ET
 
 3. **Download dataset**: Download the ETT dataset using the download tool.
 
-4. **Train model**: Train a PatchTST baseline model on the ETT dataset with default hyperparameters.
+4. **Train model**: Train any model (PatchTST, Autoformer, Informer, XGBoost, Prophet, or ARIMA) on the ETT dataset with default hyperparameters.
 
 5. **Evaluate and report**: Evaluate the trained model and generate a leaderboard CSV file.
 
@@ -24,7 +24,7 @@ A clean, reproducible benchmark repo for **time series forecasting** on the **ET
 * **Reproducible splits** (time-based: train/val/test with rolling-origin).
 * **Leakage-safe** scaling (fit on train, apply on val/test).
 * **Standard metrics**: MAE, RMSE, MAPE, sMAPE, **MASE** (with seasonal naive), CRPS (probabilistic models).
-* **Strong baselines**: ARIMA/Prophet/XGBoost vs. SOTA deep (PatchTST, Autoformer, Informer).
+* **Strong baselines**: Fully implemented classical models (ARIMA, Prophet, XGBoost) vs. SOTA deep learning models (PatchTST, Autoformer, Informer).
 * **Config-first** (Hydra/OmegaConf) & experiment tracking (TensorBoard or MLflow optional).
 * **CI sanity checks** on tiny subsets of ETT datasets.
 
@@ -210,29 +210,202 @@ dataset = get_dataset('etth', root_path='data/raw/etth', flag='train', ...)
 
 ## 🧠 Models
 
-The repository supports multiple forecasting models, from classical baselines to state-of-the-art deep learning architectures.
+The repository supports multiple forecasting models, from classical baselines to state-of-the-art deep learning architectures. All models are implemented to match their official implementations and are compatible with the ETT dataset format.
 
-### Using Models
+### Deep Learning Models
 
-#### Deep Learning Models
+#### PatchTST
 
-**PatchTST** — Patch-based Transformer for time series forecasting. Use `get_model('patchtst', ...)` to initialize with parameters like `d_in`, `out_len`, `d_model`, `n_heads`, and `n_layers`. You can also load configuration from YAML files in `configs/models/`.
+**PatchTST** — Patch-based Transformer for long-term time series forecasting. This implementation matches the official PatchTST architecture (ICLR 2023) with:
 
-**Autoformer** — Decomposition Transformer with Auto-Correlation. Initialize using `get_model('autoformer', ...)` with parameters including `d_in`, `out_len`, `d_model`, `n_heads`, and `e_layers`.
+- **Patching**: Segments time series into patches (sub-series) as tokens
+- **Channel Independence**: Each channel processed as separate univariate series sharing weights
+- **RevIN**: Reversible Instance Normalization for handling distribution shift
+- **Efficient Architecture**: Reduces sequence length and computational complexity
 
-**Informer** — Efficient Transformer for long sequence forecasting. Use `get_model('informer', ...)` to create an instance with similar parameters as Autoformer.
+**Usage:**
+```python
+from models.registry import get_model
 
-#### Classical Baselines
+model = get_model(
+    'patchtst',
+    d_in=1,           # Number of input channels
+    out_len=96,       # Prediction length
+    patch_len=16,     # Patch length
+    stride=8,         # Stride for patching
+    d_model=512,      # Model dimension
+    n_heads=8,        # Number of attention heads
+    n_layers=3,       # Number of transformer layers
+    revin=True        # Use RevIN
+)
+```
 
-**XGBoost** — Gradient boosting for time series. Import `XGBoostModel` from `models.classical.xgboost`, configure with parameters like `n_estimators` and `max_depth`, then use `fit()` and `predict()` methods.
+**Documentation**: See [`models/patchtst/README.md`](models/patchtst/README.md) for detailed architecture explanation, paper reference, and usage guide.
 
-**Prophet** — Facebook's time series forecasting tool. Import `ProphetModel` from `models.classical.prophet`, initialize and configure, then fit on data and predict for a specified number of steps.
+**Paper**: [A Time Series is Worth 64 Words: Long-term Forecasting with Transformers](https://arxiv.org/abs/2211.14730) (ICLR 2023)  
+**Official Implementation**: [yuqinie98/PatchTST](https://github.com/yuqinie98/PatchTST)
 
-**ARIMA** — AutoRegressive Integrated Moving Average. Import `ARIMAModel` from `models.classical.arima`, configure with order parameters like `(1, 1, 1)`, fit on data, and generate predictions.
+#### Autoformer
+
+**Autoformer** — Decomposition Transformer with Auto-Correlation for long-term forecasting. Uses series decomposition and auto-correlation mechanism for efficient long-sequence modeling.
+
+**Usage:**
+```python
+model = get_model(
+    'autoformer',
+    d_in=1,
+    out_len=96,
+    d_model=512,
+    n_heads=8,
+    e_layers=2,
+    d_layers=1
+)
+```
+
+**Documentation**: See [`models/autoformer/README.md`](models/autoformer/README.md) for detailed architecture explanation.
+
+#### Informer
+
+**Informer** — Efficient Transformer for long sequence forecasting using ProbSparse attention mechanism.
+
+**Usage:**
+```python
+model = get_model(
+    'informer',
+    d_in=1,
+    out_len=96,
+    d_model=512,
+    n_heads=8,
+    e_layers=2,
+    d_layers=1
+)
+```
+
+**Documentation**: See [`models/informer/README.md`](models/informer/README.md) for detailed architecture explanation.
+
+### Classical Baselines
+
+#### XGBoost
+
+**XGBoost** — Gradient boosting framework for time series with automatic feature engineering (lag features, rolling statistics, time features).
+
+**Features:**
+- Automatic feature engineering (lags, rolling stats, time features)
+- Multi-step forecasting
+- Compatible with ETT dataset format
+
+**Usage:**
+```python
+from models.classical.xgboost import XGBoostModel
+
+model = XGBoostModel(
+    n_estimators=100,
+    max_depth=6,
+    learning_rate=0.1,
+    use_lag_features=True,
+    lag_window=10,
+    use_rolling_features=True
+)
+model.fit(X_train, y_train)
+predictions = model.predict(X_val, horizon=96)
+```
+
+**Documentation**: See [`models/classical/README.md`](models/classical/README.md#xgboost-model) for detailed usage guide.
+
+#### Prophet
+
+**Prophet** — Facebook's additive regression model for time series forecasting with automatic seasonality detection and holiday effects.
+
+**Features:**
+- Automatic seasonality detection (yearly, weekly, daily)
+- Holiday effects and custom events
+- Uncertainty intervals
+- Robust to missing data and outliers
+- Component breakdown (trend, seasonality, holidays)
+
+**Usage:**
+```python
+from models.classical.prophet import ProphetModel
+import pandas as pd
+
+model = ProphetModel(
+    config={
+        'changepoint_prior_scale': 0.05,
+        'seasonality_prior_scale': 10.0,
+        'seasonality_mode': 'additive',
+        'yearly_seasonality': 'auto',
+        'weekly_seasonality': 'auto',
+        'daily_seasonality': 'auto',
+        'target_column': 'OT',
+        'pred_len': 96
+    }
+)
+model.fit(df)  # DataFrame with datetime index
+forecast = model.predict(steps=96)
+```
+
+**Documentation**: See [`models/classical/README.md`](models/classical/README.md#prophet-model) for comprehensive parameter tuning guide and examples.
+
+#### ARIMA
+
+**ARIMA** — AutoRegressive Integrated Moving Average model for statistical time series forecasting with automatic order selection.
+
+**Features:**
+- Automatic order selection using AIC
+- SARIMA support for seasonal patterns
+- Confidence intervals
+- Stationarity handling
+
+**Usage:**
+```python
+from models.classical.arima import ARIMAModel
+
+model = ARIMAModel(
+    auto_select=True,      # Automatically select best order
+    max_p=5,
+    max_d=2,
+    max_q=5,
+    seasonal_period=24,    # For hourly data
+    trend='c'
+)
+model.fit(data)
+predictions = model.predict(steps=96)
+```
+
+**Documentation**: See [`models/classical/README.md`](models/classical/README.md#arima-model) for detailed usage guide and parameter tuning tips.
 
 ### Model Configuration
 
-All models can be configured via YAML files in `configs/models/`. Use the `--config` flag to load a custom configuration file, or override specific parameters directly via command-line arguments.
+All models can be configured via YAML files in `configs/models/`. Each model has a corresponding configuration file:
+
+- `configs/models/patchtst.yaml` - PatchTST configuration
+- `configs/models/autoformer.yaml` - Autoformer configuration
+- `configs/models/informer.yaml` - Informer configuration
+- `configs/models/xgboost.yaml` - XGBoost configuration
+- `configs/models/prophet.yaml` - Prophet configuration
+
+Use the `--config` flag to load a custom configuration file, or override specific parameters directly via command-line arguments.
+
+### Model Registry
+
+All models are registered in the model registry for easy access:
+
+```python
+from models.registry import get_model
+
+# Get any model by name
+model = get_model('patchtst', d_in=1, out_len=96)
+model = get_model('autoformer', d_in=1, out_len=96)
+model = get_model('informer', d_in=1, out_len=96)
+```
+
+For classical models, import directly:
+
+```python
+from models.classical.xgboost import XGBoostModel
+from models.classical.prophet import ProphetModel
+from models.classical.arima import ARIMAModel
+```
 
 ### Adding a New Model
 
