@@ -1,7 +1,6 @@
 # energy-forecasting-bench
 
-A clean, reproducible benchmark repo for **time series forecasting** on the **ETT (Electricity Transformer Temperature)** dataset, inspired by PatchTST but focused on transformer temperature forecasting, baselines, and proper evaluation.
-
+A clean, reproducible benchmark repo for **time series forecasting** on the **ETT (Electricity Transformer Temperature)** dataset.
 ---
 
 ## 🔧 Quick Start
