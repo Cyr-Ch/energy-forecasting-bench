@@ -38,23 +38,6 @@ Embed → ProbSparse → Full Attention
 
 The ProbSparse self-attention mechanism reduces computational complexity by selecting only the most important queries:
 
-**Key Steps**:
-
-1. **Sparsity Measurement**: Measures the sparsity of attention scores:
-   ```
-   M(q_i, K) = max_j(q_i k_j^T / √d) - (1/L) Σ_j(q_i k_j^T / √d)
-   ```
-
-2. **Top-k Selection**: Selects top-k queries with highest sparsity measurement:
-   ```
-   TopK = argmax_{i∈[1,L]} M(q_i, K)
-   ```
-
-3. **Reduced Attention**: Computes attention only for selected queries:
-   ```
-   Attention(Q, K, V) = Softmax(Q_top K^T / √d) V
-   ```
-
 **Advantages**:
 - **Complexity**: O(L log L) instead of O(L²)
 - **Efficiency**: Reduces memory usage significantly
