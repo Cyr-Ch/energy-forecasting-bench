@@ -24,7 +24,7 @@ A clean, reproducible benchmark repo for **time series forecasting** on the **ET
 * **Leakage-safe** scaling (fit on train, apply on val/test).
 * **Standard metrics**: MAE, RMSE, MAPE, sMAPE, **MASE** (with seasonal naive), CRPS (probabilistic models).
 * **Strong baselines**: Fully implemented classical models (ARIMA, Prophet, XGBoost) vs. SOTA deep learning models (PatchTST, Autoformer, Informer).
-* **Config-first** (Hydra/OmegaConf) & experiment tracking (TensorBoard or MLflow optional).
+* **Config-first** (Hydra/OmegaConf) & experiment tracking.
 * **CI sanity checks** on tiny subsets of ETT datasets.
 
 ---
@@ -37,7 +37,7 @@ A clean, reproducible benchmark repo for **time series forecasting** on the **ET
 
 ### Using ETT Dataset Loaders
 
-The repository provides PyTorch dataset loaders for ETT datasets that match the official Autoformer implementation. These loaders handle data scaling, time feature extraction, and proper train/val/test splits.
+The repository provides PyTorch dataset loaders for ETT datasets. These loaders handle data scaling, time feature extraction, and proper train/val/test splits.
 
 #### Basic Usage
 
@@ -124,7 +124,7 @@ train_data = Dataset_ETT_minute(
 
 #### Data Splits
 
-The loaders use the official Autoformer splits:
+The loaders use the splits:
 - **ETTh**: 12 months train, 4 months val, 4 months test
 - **ETTm**: 12 months train, 4 months val, 4 months test (with 4 samples per hour)
 
@@ -202,14 +202,14 @@ dataset = get_dataset('etth', root_path='data/raw/etth', flag='train', ...)
   * Train: first 70% of timeline
   * Val: next 10%
   * Test: last 20%
-* **Rolling-origin** (recommended for papers): multiple forecast origins across test span.
+* **Rolling-origin**: multiple forecast origins across test span.
 * **Multi-horizon**: report H ∈ {24, 48, 96, 168} with context L ∈ {96, 168, 336, 720}.
 * **Seasonality-aware MASE**: seasonal period = 24 (hourly), = 96 (15-min).
 ---
 
 ## 🧠 Models
 
-The repository supports multiple forecasting models, from classical baselines to state-of-the-art deep learning architectures. All models are implemented to match their official implementations and are compatible with the ETT dataset format.
+The repository supports multiple forecasting models, from classical baselines to state-of-the-art deep learning architectures. All models are implemented to be compatible with the ETT dataset format.
 
 ### Deep Learning Models
 
@@ -242,7 +242,6 @@ model = get_model(
 **Documentation**: See [`models/patchtst/README.md`](models/patchtst/README.md) for detailed architecture explanation, paper reference, and usage guide.
 
 **Paper**: [A Time Series is Worth 64 Words: Long-term Forecasting with Transformers](https://arxiv.org/abs/2211.14730) (ICLR 2023)  
-**Official Implementation**: [yuqinie98/PatchTST](https://github.com/yuqinie98/PatchTST)
 
 #### Autoformer
 
@@ -491,17 +490,6 @@ The leaderboard includes:
 - `--subset`: Subset size (small/full, default: 'full')
 - `--output`: Output directory (default: 'data/raw')
 - `--force`: Force re-download even if exists
-
-### Data Preprocessing
-
-After downloading, preprocess the data using `tools/preprocess.py`. Specify the dataset with `--dataset`, provide `--input_dir` for the raw data location, and `--output_dir` for where processed data should be saved.
-
-**Preprocessing options**:
-- `--dataset`: Dataset name
-- `--input_dir`: Raw data directory
-- `--output_dir`: Processed data directory
-- `--scaler`: Scaling method (standard/minmax, default: 'standard')
-- `--missing`: Missing value handling (forward_fill/drop/interpolate)
 
 ### Custom Dataset
 
