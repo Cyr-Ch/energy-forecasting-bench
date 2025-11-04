@@ -1,6 +1,6 @@
 # energy-forecasting-bench
 
-A clean, reproducible benchmark repo for **energy consumption & generation forecasting** (load, PV, wind), inspired by PatchTST but focused on energy datasets, baselines, and proper evaluation.
+A clean, reproducible benchmark repo for **time series forecasting** on the **ETT (Electricity Transformer Temperature)** dataset, inspired by PatchTST but focused on transformer temperature forecasting, baselines, and proper evaluation.
 
 ---
 
@@ -10,9 +10,9 @@ A clean, reproducible benchmark repo for **energy consumption & generation forec
 
 2. **Install dependencies**: Install all required packages from `requirements.txt`.
 
-3. **Download dataset**: Download a small subset of the ECL dataset using the download tool.
+3. **Download dataset**: Download the ETT dataset using the download tool.
 
-4. **Train model**: Train a PatchTST baseline model on the ECL dataset with default hyperparameters.
+4. **Train model**: Train a PatchTST baseline model on the ETT dataset with default hyperparameters.
 
 5. **Evaluate and report**: Evaluate the trained model and generate a leaderboard CSV file.
 
@@ -20,25 +20,179 @@ A clean, reproducible benchmark repo for **energy consumption & generation forec
 
 ## ✅ Scope & Principles
 
-* **Energy-focused datasets** with curated loaders + preprocessing.
+* **ETT dataset focus** — ETT (Electricity Transformer Temperature) datasets with curated loaders + preprocessing.
 * **Reproducible splits** (time-based: train/val/test with rolling-origin).
 * **Leakage-safe** scaling (fit on train, apply on val/test).
 * **Standard metrics**: MAE, RMSE, MAPE, sMAPE, **MASE** (with seasonal naive), CRPS (probabilistic models).
 * **Strong baselines**: ARIMA/Prophet/XGBoost vs. SOTA deep (PatchTST, Autoformer, Informer).
 * **Config-first** (Hydra/OmegaConf) & experiment tracking (TensorBoard or MLflow optional).
-* **CI sanity checks** on tiny subsets for each dataset.
+* **CI sanity checks** on tiny subsets of ETT datasets.
 
 ---
 
 ## 📊 Datasets (built-in loaders)
 
-* **ECL (Electricity Consumption Load)** — hourly multi-series; common in Informer/PatchTST.
-* **ElectricityLoadDiagrams20112014** — 15-min Portuguese clients (UCI).
-* **ETT (ETTh1, ETTh2, ETTm1, ETTm2)** — transformer station load/temps.
-* **GEFCom2014-Solar/Wind** — competition data for generation.
-* **ISO (PJM hourly)** — regional load; easy baseline.
+* **ETT (Electricity Transformer Temperature)** — transformer station load/temperature data:
+  * **ETTh1, ETTh2** — hourly data
+  * **ETTm1, ETTm2** — 15-minute data
 
-Add-ons (optional): **REFIT**, **UK-DALE**, **SMARD (DE RES)** via converter scripts.
+### Using ETT Dataset Loaders
+
+The repository provides PyTorch dataset loaders for ETT datasets that match the official Autoformer implementation. These loaders handle data scaling, time feature extraction, and proper train/val/test splits.
+
+#### Basic Usage
+
+**ETTh (Hourly) Dataset:**
+```python
+from datasets.ettd import Dataset_ETT_hour
+
+# Load ETTh1 training data
+train_data = Dataset_ETT_hour(
+    root_path='data/raw/etth',
+    flag='train',
+    size=[96, 48, 96],  # [seq_len, label_len, pred_len]
+    features='S',  # 'S'=univariate, 'M'=multivariate, 'MS'=multivariate single target
+    data_path='ETTh1.csv',
+    target='OT',  # Target column name
+    scale=True,  # Scale data using StandardScaler
+    timeenc=0,  # 0=manual time features, 1=time_features function
+    freq='h'  # 'h' for hourly
+)
+
+# Load validation and test data
+val_data = Dataset_ETT_hour(
+    root_path='data/raw/etth',
+    flag='val',
+    size=[96, 48, 96],
+    features='S',
+    data_path='ETTh1.csv',
+    target='OT',
+    scale=True,
+    timeenc=0,
+    freq='h'
+)
+
+test_data = Dataset_ETT_hour(
+    root_path='data/raw/etth',
+    flag='test',
+    size=[96, 48, 96],
+    features='S',
+    data_path='ETTh1.csv',
+    target='OT',
+    scale=True,
+    timeenc=0,
+    freq='h'
+)
+```
+
+**ETTm (15-minute) Dataset:**
+```python
+from datasets.ettd import Dataset_ETT_minute
+
+# Load ETTm1 training data
+train_data = Dataset_ETT_minute(
+    root_path='data/raw/ettm',
+    flag='train',
+    size=[96, 48, 96],
+    features='S',
+    data_path='ETTm1.csv',
+    target='OT',
+    scale=True,
+    timeenc=0,
+    freq='t'  # 't' for 15-minute intervals
+)
+```
+
+#### Dataset Parameters
+
+- **`root_path`**: Root directory containing the CSV data files
+- **`flag`**: Dataset split - `'train'`, `'val'`, or `'test'`
+- **`size`**: `[seq_len, label_len, pred_len]` - Sequence lengths for encoder input, decoder label, and prediction horizon
+  - Default: `[384, 96, 96]` if `None`
+- **`features`**: Feature mode
+  - `'S'`: Univariate (single target column)
+  - `'M'`: Multivariate (all features)
+  - `'MS'`: Multivariate with single target
+- **`data_path`**: CSV filename (e.g., `'ETTh1.csv'`, `'ETTh2.csv'`, `'ETTm1.csv'`, `'ETTm2.csv'`)
+- **`target`**: Target column name (default: `'OT'` - Oil Temperature)
+- **`scale`**: Whether to scale data using StandardScaler (fitted on training data)
+- **`timeenc`**: Time encoding mode
+  - `0`: Manual time features (month, day, weekday, hour, minute)
+  - `1`: Uses `time_features` function for time embedding
+- **`freq`**: Frequency string
+  - `'h'`: Hourly (for ETTh)
+  - `'t'`: 15-minute intervals (for ETTm)
+
+#### Data Splits
+
+The loaders use the official Autoformer splits:
+- **ETTh**: 12 months train, 4 months val, 4 months test
+- **ETTm**: 12 months train, 4 months val, 4 months test (with 4 samples per hour)
+
+#### Dataset Output Format
+
+Each dataset returns tuples of `(seq_x, seq_y, seq_x_mark, seq_y_mark)`:
+
+```python
+seq_x, seq_y, seq_x_mark, seq_y_mark = train_data[0]
+
+# seq_x: [seq_len, features] - Encoder input sequence
+# seq_y: [label_len + pred_len, features] - Decoder target sequence
+# seq_x_mark: [seq_len, time_features] - Encoder time features
+# seq_y_mark: [label_len + pred_len, time_features] - Decoder time features
+```
+
+#### Using with DataLoaders
+
+```python
+from torch.utils.data import DataLoader
+
+# Create DataLoaders
+train_loader = DataLoader(
+    train_data,
+    batch_size=32,
+    shuffle=True,
+    num_workers=4
+)
+
+val_loader = DataLoader(
+    val_data,
+    batch_size=32,
+    shuffle=False,
+    num_workers=4
+)
+
+# Iterate over batches
+for batch_x, batch_y, batch_x_mark, batch_y_mark in train_loader:
+    # batch_x: [B, seq_len, features]
+    # batch_y: [B, label_len + pred_len, features]
+    # batch_x_mark: [B, seq_len, time_features]
+    # batch_y_mark: [B, label_len + pred_len, time_features]
+    pass
+```
+
+#### Inverse Transform
+
+To get predictions back to original scale:
+
+```python
+# Get scaled prediction from model
+scaled_pred = model(batch_x, batch_x_mark, batch_dec, batch_y_mark)
+
+# Inverse transform to original scale
+pred_original = train_data.inverse_transform(scaled_pred)
+```
+
+#### Using with Registry
+
+You can also use the dataset registry:
+
+```python
+from datasets.registry import get_dataset
+
+# Get dataset via registry (if configured)
+dataset = get_dataset('etth', root_path='data/raw/etth', flag='train', ...)
+```
 
 ---
 
@@ -86,7 +240,7 @@ All models can be configured via YAML files in `configs/models/`. Use the `--con
 
 2. Add a configuration file in `configs/models/your_model.yaml` with your model's hyperparameters.
 
-3. Test the model by running the training script with `--model your_model --dataset ecl`.
+3. Test the model by running the training script with `--model your_model --dataset etth`.
 
 ---
 
@@ -100,7 +254,7 @@ All models can be configured via YAML files in `configs/models/`. Use the `--con
 
 **Training options**:
 - `--model`: Model name (patchtst, autoformer, informer, xgboost, etc.)
-- `--dataset`: Dataset name (ecl, electricity, etth, etc.)
+- `--dataset`: Dataset name (etth, ettm, etth1, etth2, ettm1, ettm2)
 - `--target`: Target column name (default: 'load')
 - `--context_len`: Input sequence length (default: 336)
 - `--horizon`: Forecast horizon (default: 96)
@@ -129,7 +283,7 @@ All models can be configured via YAML files in `configs/models/`. Use the `--con
 
 ### Batch Training
 
-Use the provided shell scripts in the `scripts/` directory for batch training. Run `scripts/run_all_ecl.sh` to train all models on the ECL dataset, or `scripts/run_all_etth.sh` for the ETTh dataset.
+Use the provided shell scripts in the `scripts/` directory for batch training. Run `scripts/run_all_etth.sh` to train all models on the ETTh dataset, or `scripts/run_all_ettm.sh` for the ETTm dataset.
 
 ### Leaderboard Generation
 
@@ -153,12 +307,12 @@ The leaderboard includes:
 **Download with subset**: Add the `--subset` flag to download a specific subset size (e.g., `small` or `full`). The `small` subset is useful for quick testing, while `full` downloads the complete dataset.
 
 **Available datasets**:
-- `ecl`: Electricity Consumption Load (hourly)
-- `electricity`: Electricity Load Diagrams (15-min)
 - `etth`: ETTh1/ETTh2 (hourly transformer data)
 - `ettm`: ETTm1/ETTm2 (15-min transformer data)
-- `gefcom2014_solar`: GEFCom 2014 Solar competition
-- `iso_pjm`: ISO PJM hourly load data
+- `etth1`: ETTh1 dataset (hourly)
+- `etth2`: ETTh2 dataset (hourly)
+- `ettm1`: ETTm1 dataset (15-min)
+- `ettm2`: ETTm2 dataset (15-min)
 
 **Download options**:
 - `--dataset`: Dataset name (required)

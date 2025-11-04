@@ -183,16 +183,13 @@ output = model(input_tensor)
 
 ## Performance
 
-Autoformer demonstrated state-of-the-art performance on six real-world benchmark datasets:
+Autoformer demonstrated state-of-the-art performance on the ETT (Electricity Transformer Temperature) datasets:
 
-- **Energy**: ECL (Electricity Consuming Load)
-- **Traffic**: Traffic dataset
-- **Economics**: Exchange rate, ETT (Electricity Transformer Temperature)
-- **Weather**: Weather dataset
-- **Disease**: ILI (Influenza-Like Illness)
+- **ETTh1, ETTh2** — hourly transformer temperature data
+- **ETTm1, ETTm2** — 15-minute transformer temperature data
 
 **Key Results**:
-- Achieved **38% relative improvement** over previous models
+- Achieved **38% relative improvement** over previous models on ETT datasets
 - Outperformed Informer, LogTrans, and other Transformer variants
 - Especially effective for long-term forecasting (horizons > 96 steps)
 

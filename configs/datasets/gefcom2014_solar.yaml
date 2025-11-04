@@ -1,6 +1,0 @@
-# GEFCOM 2014 Solar dataset configuration
-dataset_name: gefcom2014_solar
-data_path: data/raw/gefcom2014_solar
-seq_len: 96
-pred_len: 336
-

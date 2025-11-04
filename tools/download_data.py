@@ -8,14 +8,8 @@ import urllib.error
 
 
 # Dataset download URLs
+# ETT (Electricity Transformer Temperature) datasets only
 URLS = {
-    # ECL (Electricity Consumption Load) dataset
-    # Commonly used in Informer/PatchTST papers
-    # Using Hugging Face as primary source
-    'ecl_full': 'https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets/resolve/main/electricity.csv',
-    'ecl_small': 'https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets/resolve/main/electricity.csv',
-    
-    # ETT (Electricity Transformer Temperature) datasets
     # ETTh1 and ETTh2 (hourly) - Using Hugging Face
     'etth_full': 'https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets/resolve/main/ETTh1.csv',
     'etth_small': 'https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets/resolve/main/ETTh1.csv',
@@ -27,24 +21,6 @@ URLS = {
     'ettm_small': 'https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets/resolve/main/ETTm1.csv',
     'ettm1': 'https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets/resolve/main/ETTm1.csv',
     'ettm2': 'https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets/resolve/main/ETTm2.csv',
-    
-    # Electricity Load Diagrams (UCI dataset)
-    # Portuguese clients 15-minute data
-    # Note: UCI archive link outdated, using alternative source or manual download
-    # Original UCI dataset ID: 00221
-    # Alternative: https://archive.ics.uci.edu/dataset/321/electricityloaddiagrams20112014
-    'electricity_full': 'https://archive.ics.uci.edu/static/public/321/electricityloaddiagrams20112014.zip',
-    'electricity_small': 'https://archive.ics.uci.edu/static/public/321/electricityloaddiagrams20112014.zip',
-    
-    # GEFCom 2014 Solar competition data
-    # Note: May require registration or alternative source
-    'gefcom2014_solar_full': 'https://www.kaggle.com/datasets/pankrzysiu/gefcom2014-solar',
-    'gefcom2014_solar_small': 'https://www.kaggle.com/datasets/pankrzysiu/gefcom2014-solar',
-    
-    # ISO PJM hourly load data
-    # Public data from PJM Interconnection
-    'iso_pjm_full': 'https://dataminer2.pjm.com/feed/load_forecast/definition',
-    'iso_pjm_small': 'https://dataminer2.pjm.com/feed/load_forecast/definition',
 }
 
 
@@ -149,14 +125,6 @@ def download_dataset(dataset_name, subset='full', output_dir='data/raw', force=F
     print(f"Downloading from: {url}")
     success = download_file(url, output_path)
     
-    # Handle UCI dataset download failures
-    if not success and 'archive.ics.uci.edu' in url:
-        print(f"\nNote: UCI dataset download failed. This may be due to:")
-        print("1. UCI repository structure has changed")
-        print("2. Dataset may require manual download")
-        print(f"Please visit: https://archive.ics.uci.edu/dataset/321/electricityloaddiagrams20112014")
-        print("Or try downloading directly from the UCI ML repository website.")
-        return False
     
     if success and filename.endswith('.zip'):
         # Extract zip file
@@ -169,10 +137,10 @@ def download_dataset(dataset_name, subset='full', output_dir='data/raw', force=F
 
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(description='Download energy forecasting datasets')
+    p = argparse.ArgumentParser(description='Download ETT (Electricity Transformer Temperature) datasets')
     p.add_argument('--dataset', required=True, 
-                   choices=['ecl', 'electricity', 'etth', 'ettm', 'gefcom2014_solar', 'iso_pjm'],
-                   help='Dataset name to download')
+                   choices=['etth', 'ettm', 'etth1', 'etth2', 'ettm1', 'ettm2'],
+                   help='Dataset name to download (etth or ettm)')
     p.add_argument('--subset', default='full', choices=['full', 'small'],
                    help='Dataset subset (full or small)')
     p.add_argument('--output', default='data/raw',

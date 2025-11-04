@@ -1,33 +1,248 @@
-"""ETTh and ETTm dataset loaders."""
+"""ETTh and ETTm dataset loaders based on official Autoformer implementation."""
 
-from .base import BaseDataset
+import os
+import pandas as pd
+import numpy as np
+from torch.utils.data import Dataset
+from sklearn.preprocessing import StandardScaler
+from utils.timefeatures import time_features
 from .registry import register_dataset
+import warnings
+
+warnings.filterwarnings('ignore')
 
 
 @register_dataset("etth")
-class ETThDataset(BaseDataset):
+class Dataset_ETT_hour(Dataset):
     """ETTh (Electricity Transformer Temperature Hourly) dataset."""
     
-    def __init__(self, config):
-        self.config = config
-        self.data_path = config.get("data_path", "data/raw/etth")
-    
-    def load_data(self):
-        """Load ETTh dataset."""
-        # Implementation here
-        pass
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='ETTh1.csv',
+                 target='OT', scale=True, timeenc=0, freq='h'):
+        """
+        Args:
+            root_path: Root directory containing the data
+            flag: 'train', 'val', or 'test'
+            size: [seq_len, label_len, pred_len] or None for default
+            features: 'S' (univariate), 'M' (multivariate), 'MS' (multivariate with single target)
+            data_path: CSV filename (e.g., 'ETTh1.csv', 'ETTh2.csv')
+            target: Target column name (default: 'OT')
+            scale: Whether to scale the data
+            timeenc: 0 for manual time features, 1 for time_features function
+            freq: Frequency string ('h' for hourly)
+        """
+        # size [seq_len, label_len, pred_len]
+        if size is None:
+            self.seq_len = 24 * 4 * 4  # 384
+            self.label_len = 24 * 4    # 96
+            self.pred_len = 24 * 4      # 96
+        else:
+            self.seq_len = size[0]
+            self.label_len = size[1]
+            self.pred_len = size[2]
+        
+        # init
+        assert flag in ['train', 'test', 'val']
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        self.set_type = type_map[flag]
+
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.timeenc = timeenc
+        self.freq = freq
+
+        self.root_path = root_path
+        self.data_path = data_path
+        self.__read_data__()
+
+    def __read_data__(self):
+        """Read and preprocess the data."""
+        self.scaler = StandardScaler()
+        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
+
+        # ETT hourly dataset splits: 12 months train, 4 months val, 4 months test
+        border1s = [0, 12 * 30 * 24 - self.seq_len, 12 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
+        border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
+        border1 = border1s[self.set_type]
+        border2 = border2s[self.set_type]
+
+        if self.features == 'M' or self.features == 'MS':
+            cols_data = df_raw.columns[1:]
+            df_data = df_raw[cols_data]
+        elif self.features == 'S':
+            df_data = df_raw[[self.target]]
+
+        if self.scale:
+            train_data = df_data[border1s[0]:border2s[0]]
+            self.scaler.fit(train_data.values)
+            data = self.scaler.transform(df_data.values)
+        else:
+            data = df_data.values
+
+        df_stamp = df_raw[['date']][border1:border2]
+        df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        if self.timeenc == 0:
+            df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
+            df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
+            df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
+            df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
+            data_stamp = df_stamp.drop(['date'], 1).values
+        elif self.timeenc == 1:
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
+            data_stamp = data_stamp.transpose(1, 0)
+
+        self.data_x = data[border1:border2]
+        self.data_y = data[border1:border2]
+        self.data_stamp = data_stamp
+
+    def __getitem__(self, index):
+        """
+        Get a sample from the dataset.
+        
+        Returns:
+            seq_x: [seq_len, features] encoder input
+            seq_y: [label_len + pred_len, features] decoder target
+            seq_x_mark: [seq_len, time_features] encoder time features
+            seq_y_mark: [label_len + pred_len, time_features] decoder time features
+        """
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        seq_x = self.data_x[s_begin:s_end]
+        seq_y = self.data_y[r_begin:r_end]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def __len__(self):
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
+
+    def inverse_transform(self, data):
+        """Inverse transform scaled data."""
+        return self.scaler.inverse_transform(data)
 
 
 @register_dataset("ettm")
-class ETTmDataset(BaseDataset):
+class Dataset_ETT_minute(Dataset):
     """ETTm (Electricity Transformer Temperature Minute-level) dataset."""
     
-    def __init__(self, config):
-        self.config = config
-        self.data_path = config.get("data_path", "data/raw/ettm")
-    
-    def load_data(self):
-        """Load ETTm dataset."""
-        # Implementation here
-        pass
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='ETTm1.csv',
+                 target='OT', scale=True, timeenc=0, freq='t'):
+        """
+        Args:
+            root_path: Root directory containing the data
+            flag: 'train', 'val', or 'test'
+            size: [seq_len, label_len, pred_len] or None for default
+            features: 'S' (univariate), 'M' (multivariate), 'MS' (multivariate with single target)
+            data_path: CSV filename (e.g., 'ETTm1.csv', 'ETTm2.csv')
+            target: Target column name (default: 'OT')
+            scale: Whether to scale the data
+            timeenc: 0 for manual time features, 1 for time_features function
+            freq: Frequency string ('t' for 15-minute)
+        """
+        # size [seq_len, label_len, pred_len]
+        if size is None:
+            self.seq_len = 24 * 4 * 4  # 384
+            self.label_len = 24 * 4    # 96
+            self.pred_len = 24 * 4     # 96
+        else:
+            self.seq_len = size[0]
+            self.label_len = size[1]
+            self.pred_len = size[2]
+        
+        # init
+        assert flag in ['train', 'test', 'val']
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        self.set_type = type_map[flag]
 
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.timeenc = timeenc
+        self.freq = freq
+
+        self.root_path = root_path
+        self.data_path = data_path
+        self.__read_data__()
+
+    def __read_data__(self):
+        """Read and preprocess the data."""
+        self.scaler = StandardScaler()
+        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
+
+        # ETT minute dataset splits: 12 months train, 4 months val, 4 months test
+        # 4 samples per hour (15-minute intervals)
+        border1s = [0, 12 * 30 * 24 * 4 - self.seq_len, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4 - self.seq_len]
+        border2s = [12 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 8 * 30 * 24 * 4]
+        border1 = border1s[self.set_type]
+        border2 = border2s[self.set_type]
+
+        if self.features == 'M' or self.features == 'MS':
+            cols_data = df_raw.columns[1:]
+            df_data = df_raw[cols_data]
+        elif self.features == 'S':
+            df_data = df_raw[[self.target]]
+
+        if self.scale:
+            train_data = df_data[border1s[0]:border2s[0]]
+            self.scaler.fit(train_data.values)
+            data = self.scaler.transform(df_data.values)
+        else:
+            data = df_data.values
+
+        df_stamp = df_raw[['date']][border1:border2]
+        df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        if self.timeenc == 0:
+            df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
+            df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
+            df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
+            df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
+            df_stamp['minute'] = df_stamp.date.apply(lambda row: row.minute, 1)
+            df_stamp['minute'] = df_stamp.minute.map(lambda x: x // 15)
+            data_stamp = df_stamp.drop(['date'], 1).values
+        elif self.timeenc == 1:
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
+            data_stamp = data_stamp.transpose(1, 0)
+
+        self.data_x = data[border1:border2]
+        self.data_y = data[border1:border2]
+        self.data_stamp = data_stamp
+
+    def __getitem__(self, index):
+        """
+        Get a sample from the dataset.
+        
+        Returns:
+            seq_x: [seq_len, features] encoder input
+            seq_y: [label_len + pred_len, features] decoder target
+            seq_x_mark: [seq_len, time_features] encoder time features
+            seq_y_mark: [label_len + pred_len, time_features] decoder time features
+        """
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        seq_x = self.data_x[s_begin:s_end]
+        seq_y = self.data_y[r_begin:r_end]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def __len__(self):
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
+
+    def inverse_transform(self, data):
+        """Inverse transform scaled data."""
+        return self.scaler.inverse_transform(data)
+
+
+# Convenience aliases for backward compatibility
+ETThDataset = Dataset_ETT_hour
+ETTmDataset = Dataset_ETT_minute

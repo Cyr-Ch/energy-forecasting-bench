@@ -15,7 +15,7 @@ from metrics import compute_metrics
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='patchtst')
-    parser.add_argument('--dataset', type=str, default='ecl')
+    parser.add_argument('--dataset', type=str, default='etth')
     parser.add_argument('--target', type=str, default='load')
     parser.add_argument('--context_len', type=int, default=336)
     parser.add_argument('--horizon', type=int, default=96)

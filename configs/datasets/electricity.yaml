@@ -1,6 +1,0 @@
-# Electricity dataset configuration
-dataset_name: electricity
-data_path: data/raw/electricity
-seq_len: 96
-pred_len: 336
-

@@ -1,5 +1,5 @@
 #!/bin/bash
 # Run all models on ETTh dataset
 
-python train.py --config configs/defaults.yaml
+python train.py --dataset etth --config configs/defaults.yaml
 
