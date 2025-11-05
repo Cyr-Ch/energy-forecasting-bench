@@ -166,6 +166,10 @@ class XGBoostModel:
         if isinstance(X, pd.DataFrame):
             X = X.values
         
+        # Save original X shape before flattening
+        X_original_shape = X.shape
+        X_original_ndim = X.ndim
+        
         # Handle sequence data (from dataset loaders)
         if X.ndim == 3:
             # [n_samples, seq_len, n_features] -> flatten to [n_samples * seq_len, n_features]
@@ -177,31 +181,58 @@ class XGBoostModel:
                 timestamps = timestamps.flatten()
         elif X.ndim == 2:
             X_flat = X
+            n_samples = X.shape[0]
+            seq_len = 1
         else:
             raise ValueError(f"Expected 2D or 3D input, got {X.ndim}D")
         
         # Handle target
         if y is None:
             # Use last feature as target
-            y = X_flat[:, -1:]
+            y = X_flat[:, -1]
         else:
             if isinstance(y, pd.DataFrame):
                 y = y.values
             
             if y.ndim == 3:
-                # [n_samples, seq_len, n_features] -> flatten
-                y = y.reshape(-1, y.shape[-1])
+                # [n_samples, seq_len, n_features] -> flatten to [n_samples * seq_len, n_features]
+                # Then take last feature or flatten
+                y_flat = y.reshape(-1, y.shape[-1])
+                y = y_flat[:, -1] if y_flat.shape[1] > 1 else y_flat.flatten()
             elif y.ndim == 2:
-                # [n_samples, horizon] -> repeat for each time step
-                if y.shape[1] == 1:
-                    y = np.repeat(y, X_flat.shape[0] // y.shape[0], axis=0)
+                # y is [n_samples, horizon] or [n_samples, 1]
+                if X_original_ndim == 3:
+                    # X was flattened from [n_samples, seq_len, n_features] to [n_samples * seq_len, n_features]
+                    # We need to repeat y for each timestep in each sequence
+                    if y.shape[1] == 1:
+                        # [n_samples, 1] -> repeat for each timestep -> [n_samples * seq_len]
+                        y = np.repeat(y.flatten(), seq_len)
+                    else:
+                        # [n_samples, horizon] -> use mean of horizon for each sample, then repeat
+                        y_mean = y.mean(axis=1)  # [n_samples]
+                        y = np.repeat(y_mean, seq_len)  # [n_samples * seq_len]
                 else:
-                    # For multi-step forecasting, use last value
-                    y = y[:, -1:]
+                    # X is 2D, y should match
+                    if y.shape[1] == 1:
+                        y = y.flatten()
+                    else:
+                        # Use mean or last value
+                        y = y.mean(axis=1) if y.shape[1] > 1 else y.flatten()
         
         # Ensure y is 1D for regression
         if y.ndim > 1:
             y = y.flatten() if y.shape[1] == 1 else y[:, -1]
+        
+        # Final check: ensure y matches X_flat.shape[0]
+        if len(y) != X_flat.shape[0]:
+            # If mismatch, take first X_flat.shape[0] elements or repeat
+            if len(y) < X_flat.shape[0]:
+                # Repeat y to match
+                repeat_factor = X_flat.shape[0] // len(y)
+                y = np.tile(y, repeat_factor)[:X_flat.shape[0]]
+            else:
+                # Take first X_flat.shape[0] elements
+                y = y[:X_flat.shape[0]]
         
         # Create features
         X_features = self._create_features(X_flat, timestamps)
@@ -254,10 +285,13 @@ class XGBoostModel:
         # Handle sequence data
         if X.ndim == 3:
             n_samples, seq_len, n_features = X.shape
-            X_flat = X.reshape(-1, n_features)
+            # For forecasting, use only the last timestep of each sequence
+            # This gives us the most recent context for each sequence
+            X_flat = X[:, -1, :]  # [n_samples, n_features] - last timestep of each sequence
             
             if timestamps is not None and timestamps.ndim == 2:
-                timestamps = timestamps.flatten()
+                # Use last timestep's timestamp for each sequence
+                timestamps = timestamps[:, -1]  # [n_samples]
         elif X.ndim == 2:
             X_flat = X
             n_samples = X.shape[0]
@@ -265,31 +299,32 @@ class XGBoostModel:
             raise ValueError(f"Expected 2D or 3D input, got {X.ndim}D")
         
         # For multi-step forecasting, use recursive prediction
+        # Start with the last timestep of each sequence
         predictions = []
-        current_X = X_flat.copy()
+        current_X = X_flat.copy()  # [n_samples, n_features]
         current_timestamps = timestamps.copy() if timestamps is not None else None
         
         for step in range(horizon):
-            # Create features
+            # Create features from current state
             X_features = self._create_features(current_X, current_timestamps)
             
-            # Predict one step ahead
-            pred = self.model.predict(X_features)
+            # Predict one step ahead for each sample
+            pred = self.model.predict(X_features)  # [n_samples]
             predictions.append(pred)
             
-            # Update input for next step (use last samples)
+            # Update input for next step (recursive forecasting)
             if step < horizon - 1:
-                # Shift data and append prediction
-                current_X = np.roll(current_X, -1, axis=0)
-                current_X[-1, :] = pred if pred.ndim == 0 else pred[-1]
+                # Update current_X by shifting and appending the prediction
+                # For univariate case, replace the last feature with prediction
+                if current_X.shape[1] == 1:
+                    current_X = pred.reshape(-1, 1)
+                else:
+                    # Shift features and append prediction as new value
+                    current_X = np.roll(current_X, -1, axis=1)
+                    current_X[:, -1] = pred
         
         # Stack predictions [horizon, n_samples] -> [n_samples, horizon]
-        predictions = np.array(predictions).T
-        
-        # Reshape if needed to match original input structure
-        if X.ndim == 3:
-            # Reshape to [original_n_samples, horizon]
-            predictions = predictions.reshape(n_samples, horizon)
+        predictions = np.array(predictions).T  # [n_samples, horizon]
         
         return predictions
     

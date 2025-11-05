@@ -116,7 +116,7 @@ class ARIMAModel:
                 try:
                     order = (p, d, q)
                     model = ARIMA(data, order=order, trend=self.trend, **self.kwargs)
-                    fitted = model.fit(method=self.method, disp=0)
+                    fitted = model.fit()
                     aic = fitted.aic
                     
                     if aic < best_aic:
@@ -142,7 +142,7 @@ class ARIMAModel:
                                 trend=self.trend,
                                 **self.kwargs
                             )
-                            fitted = model.fit(method=self.method, disp=0)
+                            fitted = model.fit()
                             aic = fitted.aic
                             
                             if aic < best_seasonal_aic:
@@ -200,18 +200,46 @@ class ARIMAModel:
             order = self.order or (1, 1, 1)
             seasonal_order = self.seasonal_order
         
+        # Adjust trend based on differencing order
+        # If d > 0 or D > 0, we can't use constant trend ('c')
+        # We need to use 't' (linear) or 'n' (none)
+        d = order[1] if order else 0
+        D = seasonal_order[1] if seasonal_order else 0
+        total_d = d + D
+        
+        # Determine appropriate trend
+        if self.trend is None:
+            trend = 'n'  # No trend
+        elif self.trend == 'c':
+            # Constant trend: only valid if d + D == 0
+            if total_d > 0:
+                # Use linear trend instead (equivalent to constant on differenced data)
+                trend = 't'
+            else:
+                trend = 'c'
+        else:
+            trend = self.trend
+        
         # Initialize and fit model
         try:
-            self.model = ARIMA(
-                data,
-                order=order,
-                seasonal_order=seasonal_order,
-                trend=self.trend,
-                enforce_stationarity=self.enforce_stationarity,
-                enforce_invertibility=self.enforce_invertibility,
+            # Build ARIMA arguments
+            arima_kwargs = {
+                'order': order,
+                'trend': trend,
+                'enforce_stationarity': self.enforce_stationarity,
+                'enforce_invertibility': self.enforce_invertibility,
                 **self.kwargs
-            )
-            self.fitted_model = self.model.fit(method=self.method, disp=0)
+            }
+            
+            # Only add seasonal_order if it's not None
+            if seasonal_order is not None:
+                arima_kwargs['seasonal_order'] = seasonal_order
+            
+            self.model = ARIMA(data, **arima_kwargs)
+            # Fit model - newer statsmodels versions use different fit interface
+            # Don't pass method parameter if it's not supported
+            # Let statsmodels use its default method
+            self.fitted_model = self.model.fit()
             self.is_fitted = True
             self.order = order
             self.seasonal_order = seasonal_order

@@ -244,24 +244,38 @@ class ProphetModel:
             # Get last date from training data
             last_date = self.model.history['ds'].max()
             
-            # Determine frequency
+            # Determine frequency by calculating time difference from data
             if len(self.model.history) > 1:
-                freq = pd.infer_freq(self.model.history['ds'])
-                if freq is None:
-                    # Fallback: calculate from data
-                    time_diff = self.model.history['ds'].diff().dropna()
-                    if len(time_diff) > 0:
-                        freq = time_diff.mode()[0] if len(time_diff.mode()) > 0 else pd.Timedelta(hours=1)
+                # Calculate time difference from actual data (most reliable)
+                time_diff = self.model.history['ds'].diff().dropna()
+                if len(time_diff) > 0:
+                    # Use the most common time difference
+                    freq_delta = time_diff.mode()[0] if len(time_diff.mode()) > 0 else time_diff.iloc[0]
+                else:
+                    freq_delta = pd.Timedelta(hours=1)
+                
+                # Try to infer frequency string for pd.date_range
+                freq_str = pd.infer_freq(self.model.history['ds'])
+                if freq_str is None:
+                    # Convert Timedelta to string format for pd.date_range
+                    # Common mappings: hours -> 'H', days -> 'D', minutes -> 'T'
+                    if freq_delta >= pd.Timedelta(days=1):
+                        freq_str = f'{int(freq_delta / pd.Timedelta(days=1))}D'
+                    elif freq_delta >= pd.Timedelta(hours=1):
+                        freq_str = f'{int(freq_delta / pd.Timedelta(hours=1))}H'
+                    elif freq_delta >= pd.Timedelta(minutes=1):
+                        freq_str = f'{int(freq_delta / pd.Timedelta(minutes=1))}T'
                     else:
-                        freq = pd.Timedelta(hours=1)
+                        freq_str = f'{int(freq_delta / pd.Timedelta(seconds=1))}S'
             else:
-                freq = pd.Timedelta(hours=1)
+                freq_delta = pd.Timedelta(hours=1)
+                freq_str = '1H'
             
             # Create future dates
             future_dates = pd.date_range(
-                start=last_date + freq,
+                start=last_date + freq_delta,
                 periods=steps,
-                freq=freq
+                freq=freq_str
             )
             
             future_df = pd.DataFrame({'ds': future_dates})

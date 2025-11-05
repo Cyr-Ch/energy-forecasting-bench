@@ -339,7 +339,9 @@ def main():
             config = yaml.safe_load(f)
     
     # Model and dataset arguments
-    parser.add_argument('--model', type=str, default=config.get('model', 'patchtst'), 
+    # Check for both 'model' and 'model_name' in config (some configs use model_name)
+    model_default = config.get('model') or config.get('model_name') or 'patchtst'
+    parser.add_argument('--model', type=str, default=model_default, 
                        help='Model name (patchtst, autoformer, informer for neural models; xgboost, prophet, arima for classical models)')
     parser.add_argument('--dataset', type=str, default=config.get('dataset', 'etth'),
                        help='Dataset name (etth, ettm, etth1, etth2, ettm1, ettm2)')

@@ -7,6 +7,7 @@ pytorch-lightning==2.4.0  # optional
 tensorboard
 xgboost
 prophet
+statsmodels
 omegaconf
 hydra-core
 matplotlib

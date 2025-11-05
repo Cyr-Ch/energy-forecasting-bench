@@ -615,15 +615,90 @@ To add support for a new dataset:
 
 ---
 
-## 🧪 CI (smoke tests)
+## 🧪 Testing
 
-### Running Tests Locally
+### Quick Start
 
-**Test imports**: Test that registry modules can be imported correctly by importing `datasets.registry` and `models.registry` using `importlib`.
+**Install test dependencies**:
+```bash
+pip install pytest pytest-cov
+```
 
-**Run preprocessing test**: Test the preprocessing pipeline by running `tools/preprocess.py` with a tiny dataset subset.
+**Run all tests**:
+```bash
+pytest tests/ -v
+```
 
-**Test model initialization**: Verify that models can be initialized correctly by importing from the model registry and creating an instance. Similarly test dataset loading (which may fail if data hasn't been downloaded, which is expected).
+**Run specific test categories**:
+```bash
+# Test imports
+pytest tests/test_imports.py -v
+
+# Test models
+pytest tests/test_models.py -v
+
+# Test datasets (requires data download)
+pytest tests/test_datasets.py -v
+
+# Test metrics
+pytest tests/test_metrics.py -v
+
+# Test training infrastructure
+pytest tests/test_training_smoke.py -v
+```
+
+### Test Categories
+
+The repository includes comprehensive tests:
+
+1. **Import Tests** (`tests/test_imports.py`): Verify all modules can be imported
+2. **Model Tests** (`tests/test_models.py`): Test model initialization and forward passes
+3. **Dataset Tests** (`tests/test_datasets.py`): Test dataset loading and processing
+4. **Metrics Tests** (`tests/test_metrics.py`): Test evaluation metrics
+5. **Training Smoke Tests** (`tests/test_training_smoke.py`): Quick tests for training infrastructure
+
+### Manual Testing
+
+**Test dataset loading**:
+```python
+from datasets.ettd import Dataset_ETT_hour
+
+dataset = Dataset_ETT_hour(
+    root_path='data/raw/etth',
+    flag='train',
+    size=[96, 48, 96],
+    features='S',
+    data_path='ETTh1.csv',
+    target='OT',
+    scale=True,
+    timeenc=0,
+    freq='h'
+)
+print(f"Dataset size: {len(dataset)}")
+```
+
+**Test model initialization**:
+```python
+from models.registry import get_model
+import torch
+
+model = get_model('patchtst', d_in=1, out_len=96, d_model=64, n_heads=2, dropout=0.1)
+batch_x = torch.randn(2, 336, 1)
+batch_x_mark = torch.randn(2, 336, 4)
+batch_y_mark = torch.randn(2, 96, 4)
+
+model.eval()
+with torch.no_grad():
+    output = model(batch_x, batch_x_mark, None, batch_y_mark)
+print(f"Output shape: {output.shape}")
+```
+
+**Quick training test** (1 epoch, small model):
+```bash
+python train.py --model patchtst --dataset etth --epochs 1 --batch_size 2 \
+    --context_len 96 --horizon 24 --d_model 32 --n_heads 2 --n_layers 1 \
+    --exp_name test_run
+```
 
 ### GitHub Actions CI
 
@@ -641,15 +716,14 @@ The repository includes GitHub Actions CI that runs on every push/PR:
 - Click on the latest workflow run
 - Check individual job status and logs
 
-### Adding Tests
+### Comprehensive Testing Guide
 
-To add new tests:
-
-1. **Unit tests**: Create a `tests/` directory and add test files like `test_models.py`. Import necessary modules (`torch`, `get_model` from registry), create test functions that initialize models, pass sample inputs, and assert expected output shapes.
-
-2. **Integration tests**: Create integration test files like `test_pipeline.py` that test the full pipeline including dataset loading, data splitting, model initialization, and forward passes.
-
-3. **Run tests**: Execute all tests using `pytest tests/` from the project root.
+See [`TESTING.md`](TESTING.md) for detailed testing instructions, including:
+- Running tests with coverage
+- Integration testing
+- Troubleshooting
+- Adding new tests
+- Best practices
 
 ---
 
