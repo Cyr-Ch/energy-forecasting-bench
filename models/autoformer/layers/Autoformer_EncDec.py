@@ -187,9 +187,11 @@ class DecoderLayer(nn.Module):
         x, trend3 = self.decomp3(x + y)
         
         residual_trend = trend1 + trend2 + trend3
-        residual_trend = self.projection(residual_trend.permute(0, 2, 1)).transpose(1, 2)
-        x, trend4 = self.decomp4(x)
-        trend = residual_trend + trend4
+        residual_trend = self.projection(residual_trend.permute(0, 2, 1)).transpose(1, 2)  # [B, L_dec, c_out]
+        x, trend4 = self.decomp4(x)  # trend4: [B, L_dec, d_model]
+        # Project trend4 to match residual_trend shape
+        trend4 = self.projection(trend4.permute(0, 2, 1)).transpose(1, 2)  # [B, L_dec, c_out]
+        trend = residual_trend + trend4  # [B, L_dec, c_out]
         
         return x, trend
 

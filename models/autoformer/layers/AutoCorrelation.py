@@ -105,26 +105,63 @@ class AutoCorrelation(nn.Module):
             out: [B, H, L, D_head]
             attn: attention weights if output_attention=True
         """
-        B, H, L, D = queries.shape
+        B, H, L_q, D = queries.shape
+        _, _, L_k, _ = keys.shape
         
         # Compute auto-correlation using FFT on time dimension
         # q_fft and k_fft should be computed on the time dimension (L)
         # queries: [B, H, L, D] -> [B, H, D, L] for FFT
-        q_fft = torch.fft.rfft(queries.permute(0, 1, 3, 2).contiguous(), dim=-1)  # [B, H, D, L//2+1]
-        k_fft = torch.fft.rfft(keys.permute(0, 1, 3, 2).contiguous(), dim=-1)  # [B, H, D, L//2+1]
-        res = q_fft * torch.conj(k_fft)  # [B, H, D, L//2+1]
-        corr = torch.fft.irfft(res, n=L, dim=-1)  # [B, H, D, L]
-        corr = corr.permute(0, 1, 3, 2).contiguous()  # [B, H, L, D]
+        q_fft = torch.fft.rfft(queries.permute(0, 1, 3, 2).contiguous(), dim=-1)  # [B, H, D, L_q//2+1]
+        k_fft = torch.fft.rfft(keys.permute(0, 1, 3, 2).contiguous(), dim=-1)  # [B, H, D, L_k//2+1]
+        
+        # For cross-attention (L_q != L_k), pad the shorter FFT to match
+        if L_q != L_k:
+            # Pad the shorter FFT to match the longer one
+            max_fft_len = max(q_fft.shape[-1], k_fft.shape[-1])
+            if q_fft.shape[-1] < max_fft_len:
+                padding = max_fft_len - q_fft.shape[-1]
+                q_fft = torch.nn.functional.pad(q_fft, (0, padding), mode='constant', value=0)
+            elif k_fft.shape[-1] < max_fft_len:
+                padding = max_fft_len - k_fft.shape[-1]
+                k_fft = torch.nn.functional.pad(k_fft, (0, padding), mode='constant', value=0)
+        
+        res = q_fft * torch.conj(k_fft)  # [B, H, D, max_fft_len]
+        # Use L_q (query length) for inverse FFT to get correct output length
+        corr = torch.fft.irfft(res, n=L_q, dim=-1)  # [B, H, D, L_q]
+        corr = corr.permute(0, 1, 3, 2).contiguous()  # [B, H, L_q, D]
         
         # Time delay aggregation
-        # values: [B, H, L, D] -> [B, H, D, L] for aggregation
-        # corr: [B, H, L, D] -> [B, H, D, L] for aggregation
-        if self.training:
-            V = self.time_delay_agg_training(values.permute(0, 1, 3, 2).contiguous(), corr.permute(0, 1, 3, 2).contiguous())
-            V = V.permute(0, 1, 3, 2)  # [B, H, D, L] -> [B, H, L, D]
+        # For cross-attention with different sequence lengths, interpolate values to match query length
+        _, _, S, _ = values.shape
+        if S != L_q:
+            # Interpolate values to match query length for cross-attention
+            # values: [B, H, S, D] -> interpolate to [B, H, L_q, D]
+            # Reshape to [B*H, D, S] for 3D interpolation, then reshape back
+            B, H, S, D = values.shape
+            values_reshaped = values.permute(0, 1, 3, 2).contiguous()  # [B, H, D, S]
+            values_reshaped = values_reshaped.view(B * H, D, S)  # [B*H, D, S] - 3D for interpolation
+            values_interp = torch.nn.functional.interpolate(
+                values_reshaped,  # [B*H, D, S]
+                size=L_q,
+                mode='linear',
+                align_corners=False
+            )  # [B*H, D, L_q]
+            values_interp = values_interp.view(B, H, D, L_q).permute(0, 1, 3, 2)  # [B, H, L_q, D]
+            # Now use standard time delay aggregation with matched lengths
+            if self.training:
+                V = self.time_delay_agg_training(values_interp.permute(0, 1, 3, 2).contiguous(), corr.permute(0, 1, 3, 2).contiguous())
+                V = V.permute(0, 1, 3, 2)  # [B, H, D, L_q] -> [B, H, L_q, D]
+            else:
+                V = self.time_delay_agg_inference(values_interp.permute(0, 1, 3, 2).contiguous(), corr.permute(0, 1, 3, 2).contiguous())
+                V = V.permute(0, 1, 3, 2)  # [B, H, D, L_q] -> [B, H, L_q, D]
         else:
-            V = self.time_delay_agg_inference(values.permute(0, 1, 3, 2).contiguous(), corr.permute(0, 1, 3, 2).contiguous())
-            V = V.permute(0, 1, 3, 2)  # [B, H, D, L] -> [B, H, L, D]
+            # Same length - use standard aggregation
+            if self.training:
+                V = self.time_delay_agg_training(values.permute(0, 1, 3, 2).contiguous(), corr.permute(0, 1, 3, 2).contiguous())
+                V = V.permute(0, 1, 3, 2)  # [B, H, D, L_q] -> [B, H, L_q, D]
+            else:
+                V = self.time_delay_agg_inference(values.permute(0, 1, 3, 2).contiguous(), corr.permute(0, 1, 3, 2).contiguous())
+                V = V.permute(0, 1, 3, 2)  # [B, H, D, L_q] -> [B, H, L_q, D]
         
         if self.output_attention:
             return (V.contiguous(), corr.permute(0, 2, 3, 1))

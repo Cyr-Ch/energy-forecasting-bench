@@ -13,3 +13,4 @@ hydra-core
 matplotlib
 seaborn
 pyyaml
+pytest  # for testing

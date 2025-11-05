@@ -13,6 +13,8 @@ from tqdm import tqdm
 
 from datasets.registry import get_dataset
 from models.registry import get_model
+# Import models to trigger registration
+import models  # This ensures all models are registered
 from utils.seed import set_seed
 from utils.serialization import save_config, save_model, load_model
 from metrics import compute_metrics, mae, rmse
@@ -253,11 +255,13 @@ def train_classical_model(model_name, train_dataset, val_dataset, args, config, 
         val_series = val_dataset.data_x[:, 0] if val_dataset.data_x.ndim == 2 else val_dataset.data_x.flatten()
         
         # Initialize model
+        # Default to False for auto_select to speed up training (set to True if you want best model)
         arima_config = {
-            'auto_select': config.get('auto_select', True),
-            'max_p': config.get('max_p', 5),
+            'auto_select': config.get('auto_select', False),  # Changed default to False for speed
+            'order': config.get('order', (1, 1, 1)),  # Default order: (p, d, q)
+            'max_p': config.get('max_p', 3),  # Reduced from 5 to 3 for faster auto-select
             'max_d': config.get('max_d', 2),
-            'max_q': config.get('max_q', 5),
+            'max_q': config.get('max_q', 3),  # Reduced from 5 to 3 for faster auto-select
             'seasonal_period': config.get('seasonal_period', 24 if args.freq == 'h' else 96),
             'trend': config.get('trend', 'c'),
         }
@@ -522,7 +526,9 @@ def main():
     else:
         # Train neural model
         # Determine input dimension
-        d_in = train_dataset.data_x.shape[1] if train_dataset.data_x.ndim == 2 else 1
+        # Get actual feature dimension from a sample to be sure
+        sample_x, _, _, _ = train_dataset[0]
+        d_in = sample_x.shape[-1]  # Last dimension is the feature dimension
         
         # Initialize model
         print(f"Initializing neural model: {args.model}")
@@ -545,10 +551,13 @@ def main():
                 'revin': args.revin,
             })
         elif args.model in ['autoformer', 'informer']:
+            # label_len should match dataset's label_len (context_len // 2)
+            label_len = args.context_len // 2
             model_kwargs.update({
                 'e_layers': args.e_layers,
                 'd_layers': args.d_layers,
                 'd_ff': args.d_ff,
+                'label_len': label_len,  # Pass correct label_len to match dataset
             })
             if args.model == 'autoformer':
                 model_kwargs.update({
