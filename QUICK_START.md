@@ -73,4 +73,3 @@ python eval.py --exp_dir runs/{your_experiment_name} --split test
 ### Model not training?
 - Check console output for error messages
 - Verify dataset path is correct
-

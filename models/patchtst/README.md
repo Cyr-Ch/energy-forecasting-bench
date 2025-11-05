@@ -156,195 +156,32 @@ Reconstructs forecasts from patch predictions:
 
 ## How to Use
 
-### Basic Usage
+### Training with Command Line
 
-#### Using with ETT Dataset
-
-```python
-import torch
-from datasets.ettd import Dataset_ETT_hour
-from models.registry import get_model
-from torch.utils.data import DataLoader
-
-# Load dataset
-train_data = Dataset_ETT_hour(
-    root_path='data/raw/etth',
-    flag='train',
-    size=[96, 48, 96],  # [seq_len, label_len, pred_len]
-    features='S',  # Univariate
-    data_path='ETTh1.csv',
-    target='OT',
-    scale=True,
-    timeenc=0,
-    freq='h'
-)
-
-# Initialize model
-model = get_model(
-    'patchtst',
-    d_in=1,           # Number of input channels
-    out_len=96,       # Prediction length
-    d_model=512,      # Model dimension
-    n_heads=8,        # Number of attention heads
-    n_layers=3,       # Number of transformer layers
-    d_ff=2048,        # Feed-forward dimension
-    dropout=0.1,      # Dropout rate
-    patch_len=16,     # Patch length
-    stride=8,         # Stride for patching
-    revin=True,       # Use RevIN
-    affine=True       # Use affine parameters in RevIN
-)
-
-# Prepare data
-data_loader = DataLoader(train_data, batch_size=32, shuffle=True)
-
-# Training loop
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-criterion = torch.nn.MSELoss()
-
-for epoch in range(10):
-    for batch_idx, (seq_x, seq_y, seq_x_mark, seq_y_mark) in enumerate(data_loader):
-        # seq_x: [B, seq_len, features]
-        # seq_y: [B, label_len + pred_len, features]
-        
-        # Forward pass
-        pred = model(seq_x)  # [B, pred_len] or [B, pred_len, C]
-        
-        # Extract target
-        target = seq_y[:, -96:, 0]  # Last 96 steps (pred_len)
-        
-        # Compute loss
-        loss = criterion(pred, target)
-        
-        # Backward pass
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        
-        print(f"Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}")
+**Basic training**:
+```bash
+python train.py --model patchtst --dataset etth1 --epochs 10 --batch_size 32
 ```
 
-#### Simple Example
-
-```python
-import torch
-from models.registry import get_model
-
-# Create sample data
-batch_size = 32
-seq_len = 336
-n_features = 1
-pred_len = 96
-
-# Random time series data: [B, L, C]
-x = torch.randn(batch_size, seq_len, n_features)
-
-# Initialize model
-model = get_model(
-    'patchtst',
-    d_in=n_features,
-    out_len=pred_len,
-    patch_len=16,
-    stride=8,
-    d_model=512,
-    n_heads=8,
-    n_layers=3
-)
-
-# Forward pass
-pred = model(x)  # [B, pred_len] or [B, pred_len, C]
-
-print(f"Input shape: {x.shape}")
-print(f"Output shape: {pred.shape}")
+**With config file**:
+```bash
+python train.py --config configs/models/patchtst.yaml --dataset etth1
 ```
 
-### Multivariate Forecasting
-
-```python
-import torch
-from models.registry import get_model
-
-# Multivariate time series
-batch_size = 32
-seq_len = 336
-n_features = 7  # 7 variables
-pred_len = 96
-
-x = torch.randn(batch_size, seq_len, n_features)
-
-# Initialize model (channel independence)
-model = get_model(
-    'patchtst',
-    d_in=n_features,  # Number of channels
-    out_len=pred_len,
-    patch_len=16,
-    stride=8,
-    d_model=512,
-    n_heads=8,
-    n_layers=3,
-    revin=True  # Use RevIN for each channel
-)
-
-# Forward pass
-pred = model(x)  # [B, pred_len, n_features]
-
-print(f"Input shape: {x.shape}")      # [32, 336, 7]
-print(f"Output shape: {pred.shape}")  # [32, 96, 7]
-```
-
-### Using Configuration File
-
-```python
-import yaml
-import torch
-from models.registry import get_model
-
-# Load configuration
-with open('configs/models/patchtst.yaml', 'r') as f:
-    config = yaml.safe_load(f)
-
-# Initialize model from config
-model = get_model(
-    'patchtst',
-    d_in=1,
-    out_len=96,
-    **{k: v for k, v in config.items() if k not in ['model']}
-)
-
-# Use model
-x = torch.randn(32, 336, 1)
-pred = model(x)
-```
-
-### Custom Configuration
-
-```python
-from models.registry import get_model
-
-# Custom configuration
-model = get_model(
-    'patchtst',
-    d_in=1,
-    out_len=96,
-    # Patch parameters
-    patch_len=16,      # Patch length (16 for PatchTST/64, 42 for PatchTST/42)
-    stride=8,         # Stride (50% overlap)
-    
-    # Transformer parameters
-    d_model=512,      # Model dimension
-    n_heads=8,        # Number of attention heads
-    n_layers=3,       # Number of transformer layers
-    d_ff=2048,        # Feed-forward dimension (typically 4 * d_model)
-    dropout=0.1,      # Dropout rate
-    activation='gelu', # Activation function
-    
-    # RevIN parameters
-    revin=True,       # Use RevIN
-    affine=True,      # Use affine parameters in RevIN
-    
-    # Head parameters
-    head_dropout=0.0  # Dropout in prediction head
-)
+**Custom parameters**:
+```bash
+python train.py \
+    --model patchtst \
+    --dataset etth1 \
+    --context_len 336 \
+    --horizon 96 \
+    --d_model 512 \
+    --n_heads 8 \
+    --n_layers 3 \
+    --patch_len 16 \
+    --stride 8 \
+    --revin \
+    --epochs 10
 ```
 
 ## Configuration Parameters
@@ -520,4 +357,3 @@ If you use PatchTST in your research, please cite:
 1. **Paper**: [A Time Series is Worth 64 Words: Long-term Forecasting with Transformers](https://arxiv.org/abs/2211.14730)
 2. **Official Implementation**: [yuqinie98/PatchTST](https://github.com/yuqinie98/PatchTST)
 3. **RevIN**: [Reversible Instance Normalization for Accurate Time-Series Forecasting against Distribution Shift](https://arxiv.org/abs/2210.07206)
-

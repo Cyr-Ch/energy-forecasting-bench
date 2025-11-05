@@ -95,103 +95,19 @@ pytest tests/test_training_smoke.py -v
 - Quick model initialization
 - Config file existence
 
-## Manual Testing
+### 6. Training Pipeline Tests (`tests/test_training_pipeline.py`)
 
-### 1. Test Dataset Loading
-
-```python
-from datasets.ettd import Dataset_ETT_hour
-
-# Load dataset
-dataset = Dataset_ETT_hour(
-    root_path='data/raw/etth',
-    flag='train',
-    size=[96, 48, 96],
-    features='S',
-    data_path='ETTh1.csv',
-    target='OT',
-    scale=True,
-    timeenc=0,
-    freq='h'
-)
-
-# Check data
-print(f"Dataset size: {len(dataset)}")
-seq_x, seq_y, seq_x_mark, seq_y_mark = dataset[0]
-print(f"seq_x shape: {seq_x.shape}")
-print(f"seq_y shape: {seq_y.shape}")
-```
-
-### 2. Test Model Initialization
-
-```python
-from models.registry import get_model
-import torch
-
-# Test neural model
-model = get_model('patchtst', d_in=1, out_len=96, d_model=64, n_heads=2, dropout=0.1)
-batch_x = torch.randn(2, 336, 1)
-batch_x_mark = torch.randn(2, 336, 4)
-batch_y_mark = torch.randn(2, 96, 4)
-
-model.eval()
-with torch.no_grad():
-    output = model(batch_x, batch_x_mark, None, batch_y_mark)
-print(f"Output shape: {output.shape}")
-
-# Test classical model
-from models.classical.xgboost import XGBoostModel
-xgb_model = XGBoostModel(n_estimators=10, max_depth=3)
-print("XGBoost model initialized")
-```
-
-### 3. Test Training Script (Quick Run)
+Full training and evaluation pipeline tests:
 
 ```bash
-# Test neural model training (1 epoch, small model)
-python train.py \
-    --model patchtst \
-    --dataset etth \
-    --epochs 1 \
-    --batch_size 2 \
-    --context_len 96 \
-    --horizon 24 \
-    --d_model 32 \
-    --n_heads 2 \
-    --n_layers 1 \
-    --exp_name test_run
-
-# Test classical model training
-python train.py \
-    --model xgboost \
-    --dataset etth \
-    --context_len 96 \
-    --horizon 24 \
-    --exp_name test_xgboost
+pytest tests/test_training_pipeline.py -v
 ```
 
-### 4. Test Evaluation Script
-
-```bash
-# Evaluate a trained model
-python eval.py \
-    --exp_dir runs/test_run \
-    --split test \
-    --metrics MAE,RMSE,MAPE
-```
-
-### 5. Test Metrics
-
-```python
-from metrics import compute_metrics
-import numpy as np
-
-y_true = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-y_pred = np.array([1.1, 2.1, 2.9, 4.1, 5.1])
-
-metrics = compute_metrics(y_true, y_pred)
-print(metrics)
-```
+**What it tests:**
+- Complete training pipeline for classical models
+- Complete training pipeline for neural models
+- Model saving and loading
+- Results file generation
 
 ## Integration Testing
 
@@ -238,9 +154,6 @@ for m in ['datasets.registry', 'models.registry']:
     importlib.import_module(m)
 print('Registries import OK')
 "
-
-# Test preprocessing (if tool exists)
-python tools/preprocess.py --dataset ecl --subset tiny
 ```
 
 ## Test Coverage
@@ -289,16 +202,7 @@ python tools/download_data.py --dataset etth
 
 ## Adding New Tests
 
-1. **Create test file** in `tests/` directory:
-```python
-# tests/test_new_feature.py
-import pytest
-
-def test_new_feature():
-    # Your test code
-    assert True
-```
-
+1. **Create test file** in `tests/` directory following naming convention `test_*.py`
 2. **Run the test**:
 ```bash
 pytest tests/test_new_feature.py -v
@@ -323,4 +227,3 @@ pytest tests/ -v
 4. **Test edge cases** (empty data, wrong shapes, etc.)
 
 5. **Keep tests independent** - each test should work in isolation
-
